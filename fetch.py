@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import argparse
 import os
 import subprocess
 import time
@@ -12,7 +13,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-DUO_GEN = os.path.expanduser("~/Software/duo-cli/duo_gen.py")
+parser = argparse.ArgumentParser(description='Download floorplans.')
+parser.add_argument('--duo-gen', type=str,
+                    default=os.path.expanduser("~/Software/duo-cli/duo_gen.py"),
+                    help='path to duo_gen.py')
+parser.add_argument('--git', action='store_true',
+                    help='commit new floorplans to Git')
+args = parser.parse_args()
 
 SEARCH_URL = "https://floorplans.mit.edu/SearchPDF.Asp"
 LIST_URL = "https://floorplans.mit.edu/ListPDF.Asp?Bldg="
@@ -45,7 +52,7 @@ wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, 'duo_iframe')))
 pc = driver.find_element_by_id("passcode")
 if pc:
     pc.click()
-    otpgen = subprocess.Popen([DUO_GEN], cwd=os.path.dirname(DUO_GEN), stdout=subprocess.PIPE)
+    otpgen = subprocess.Popen([args.duo_gen], cwd=os.path.dirname(args.duo_gen), stdout=subprocess.PIPE)
     otp, _ = otpgen.communicate()
     otp = otp.strip()
     driver.find_element_by_name("passcode").send_keys(otp)
@@ -75,9 +82,8 @@ for building in get_building_list(driver):
     for floor in driver.find_elements_by_xpath('//a[contains(@href,"/pdfs/")]'):
         pdf_urls.append(floor.get_property('href'))
 
+driver.quit()
+
 # TODO: Figure out what has changed since last run
 
-try:
-    subprocess.check_call(wget_args + pdf_urls)
-finally:
-    driver.quit()
+subprocess.check_call(wget_args + pdf_urls)
