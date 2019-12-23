@@ -3,6 +3,8 @@
 from __future__ import print_function
 
 import argparse
+import datetime
+import git
 import os
 import subprocess
 import time
@@ -32,6 +34,40 @@ options.add_experimental_option("prefs", {
     'profile.default_content_setting_values.automatic_downloads': 2,
     'profile.managed_auto_select_certificate_for_urls': ['{"pattern":"https://idp.mit.edu:446","filter":{"ISSUER":{"OU":"Client CA v1"}}}'],
 })
+
+def commit_files_by_date(current_files=None):
+    repo = git.Repo('.')
+    if current_files:
+        current_files = set(current_files)
+        old_files = set(blob.name for blob in repo.commit().tree)
+        deleted_files = old_files - current_files
+        if deleted_files:
+            repo.index.remove(deleted_files)
+            repo.index.commit("Remove files that no longer exist")
+            for f in deleted_files:
+                os.remove(f)
+    changed_files = repo.git.status(porcelain=True)
+    changed_files = set(x.split(None, 1)[1] for x in changed_files.splitlines())
+    # Group files by date
+    dates = dict()
+    for f in changed_files:
+        t = os.stat(f).st_mtime
+        date = time.strftime("%Y-%m-%d", time.localtime(t))
+        dates[date] = dates.get(date, []) + [(f, t)]
+    for date in sorted(dates.iterkeys()):
+        # Commit files from oldest to newest.
+        commit_time = max(f[1] for f in dates[date])
+        repo.index.add([f[0] for f in dates[date]])
+        commit_message = "%s\n\nModified files:\n%s" % (
+            date,
+            "\n".join("- %s (%s)" % (f[0], time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(f[1]))) for f in sorted(dates[date])),
+        )
+        commit_date = time.strftime("%s %z", time.localtime(commit_time))
+        print("Commit at %s: %s" % (commit_date, dates[date]))
+        repo.index.commit(commit_message, author_date=commit_date, commit_date=commit_date)
+
+if args.git:
+    commit_files_by_date()
 
 driver = webdriver.Chrome(executable_path=os.path.abspath(os.path.join(os.path.dirname(__file__), "chromedriver")),
                           service_args=["--verbose", "--log-path=/tmp/chromedriver.log"],
@@ -66,7 +102,7 @@ def get_building_list(driver):
     building_options = building_select.find_elements_by_tag_name("option")
     return [building_option.get_attribute("value") for building_option in building_options]
 
-wget_args = ['wget', '-N']
+wget_args = 'wget -p -nH --cut-dirs=10'.split()
 
 for cookie in driver.get_cookies():
     if cookie['name'].startswith('_shibsession'):
@@ -86,4 +122,10 @@ driver.quit()
 
 # TODO: Figure out what has changed since last run
 
-subprocess.check_call(wget_args + pdf_urls)
+try:
+    subprocess.check_call(wget_args + pdf_urls)
+except subprocess.CalledProcessError as e:
+    print("Some downloads failed: %s" % (e,))
+
+if args.git:
+    commit_files_by_date(os.path.basename(f) for f in pdf_urls)
