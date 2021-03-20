@@ -8,32 +8,20 @@ import git
 import os
 import subprocess
 import time
-from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import mechanize
+import sys
+import logging
 
 parser = argparse.ArgumentParser(description='Download floorplans.')
-parser.add_argument('--duo-gen', type=str,
-                    default=os.path.expanduser("~/Software/duo-cli/duo_gen.py"),
-                    help='path to duo_gen.py')
+parser.add_argument('--tc-username', type=str, required=True)
+parser.add_argument('--tc-password', type=str, default=os.environ.get("TC_PASSWORD"))
+parser.add_argument('--verbose', '-v', action='store_true')
 parser.add_argument('--git', action='store_true',
                     help='commit new floorplans to Git')
 args = parser.parse_args()
 
 SEARCH_URL = "https://floorplans.mit.edu/SearchPDF.Asp"
 LIST_URL = "https://floorplans.mit.edu/ListPDF.Asp?Bldg="
-
-options = Options()
-#options.add_argument("--headless")
-options.add_experimental_option("prefs", {
-#    "download.default_directory" : DOWNLOAD_DIR,
-    'plugins.always_open_pdf_externally': True,
-    'profile.default_content_setting_values.automatic_downloads': 2,
-    'profile.managed_auto_select_certificate_for_urls': ['{"pattern":"https://idp.mit.edu:446","filter":{"ISSUER":{"OU":"Client CA v1"}}}'],
-})
 
 def commit_files_by_date(current_files=None):
     repo = git.Repo('.')
@@ -69,56 +57,49 @@ def commit_files_by_date(current_files=None):
 if args.git:
     commit_files_by_date()
 
-driver = webdriver.Chrome(executable_path=os.path.abspath(os.path.join(os.path.dirname(__file__), "chromedriver")),
-                          service_args=["--verbose", "--log-path=/tmp/chromedriver.log"],
-                          options=options)  
-wait = WebDriverWait(driver, 10)
-driver.get(SEARCH_URL)
+br = mechanize.Browser()
+br.set_handle_robots(False)
+if args.verbose:
+    logging.basicConfig(level=logging.DEBUG)
+    br.set_debug_http(True)
+    br.set_debug_responses(True)
+    br.set_debug_redirects(True)
 
-# TODO: Skip if already logged in or don't need WAYF
-wait.until(EC.visibility_of_element_located((By.NAME, 'user_idp')))
+br.open(SEARCH_URL)
 
-# TODO: Skip if already logged in
-if driver.find_element_by_name("user_idp"):
-    driver.find_element_by_id("Select").click()
+br.select_form(name='IdPList')
+br.form["user_idp"] = ["https://idp.touchstonenetwork.net/shibboleth-idp"]
+br.submit()
 
-wait.until(EC.element_to_be_clickable((By.NAME, "login_certificate"))).click()
+br.select_form(name="loginform")
+br.form["j_username"] = args.tc_username
+br.form["j_password"] = args.tc_password
+br.submit()
 
-wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, 'duo_iframe')))
-pc = driver.find_element_by_id("passcode")
-if pc:
-    pc.click()
-    otpgen = subprocess.Popen([args.duo_gen], cwd=os.path.dirname(args.duo_gen), stdout=subprocess.PIPE)
-    otp, _ = otpgen.communicate()
-    otp = otp.decode('ascii').strip()
-    driver.find_element_by_name("passcode").send_keys(otp)
-    pc.click()
+# Shibboleth returns a form with a "Continue" button we have to press since we
+# don't have JavaScript.
+br.select_form(nr=0)
+br.submit()
 
-# Wait until logged in
-wait.until(EC.visibility_of_element_located((By.NAME, "Bldg")))
+br.open(SEARCH_URL)
 
-def get_building_list(driver):
-    building_select = driver.find_element_by_name("Bldg")
-    building_options = building_select.find_elements_by_tag_name("option")
-    return [building_option.get_attribute("value") for building_option in building_options]
+def get_building_list(br):
+    br.select_form(name="frmSearchPDF")
+    # item.name is the VALUE attribute
+    return [item.name for item in br.find_control("Bldg").items]
 
 wget_args = 'wget -p -nH --cut-dirs=10'.split()
 
-for cookie in driver.get_cookies():
-    if cookie['name'].startswith('_shibsession'):
-        wget_args.extend(("--header", "Cookie: %s=%s" % (cookie['name'], cookie['value'])))
+for cookie in br.cookiejar:
+    if cookie.name.startswith('_shibsession'):
+        wget_args.extend(("--header", "Cookie: %s=%s" % (cookie.name, cookie.value)))
 
 pdf_urls = []
 
-for building in get_building_list(driver):
-    driver.get(LIST_URL + building)
-
-    wait.until(EC.visibility_of_element_located((By.ID, 'maincontent')))
-
-    for floor in driver.find_elements_by_xpath('//a[contains(@href,"/pdfs/")]'):
-        pdf_urls.append(floor.get_property('href'))
-
-driver.quit()
+for building in get_building_list(br):
+    br.open(LIST_URL + building)
+    for floor in br.links(url_regex=r'/pdfs/'):
+        pdf_urls.append(floor.absolute_url)
 
 # TODO: Figure out what has changed since last run
 
