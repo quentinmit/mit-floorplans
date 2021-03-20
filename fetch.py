@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 from __future__ import print_function
 
@@ -54,7 +54,7 @@ def commit_files_by_date(current_files=None):
         t = os.stat(f).st_mtime
         date = time.strftime("%Y-%m-%d", time.localtime(t))
         dates[date] = dates.get(date, []) + [(f, t)]
-    for date in sorted(dates.iterkeys()):
+    for date in sorted(dates.keys()):
         # Commit files from oldest to newest.
         commit_time = max(f[1] for f in dates[date])
         repo.index.add([f[0] for f in dates[date]])
@@ -90,7 +90,7 @@ if pc:
     pc.click()
     otpgen = subprocess.Popen([args.duo_gen], cwd=os.path.dirname(args.duo_gen), stdout=subprocess.PIPE)
     otp, _ = otpgen.communicate()
-    otp = otp.strip()
+    otp = otp.decode('ascii').strip()
     driver.find_element_by_name("passcode").send_keys(otp)
     pc.click()
 
