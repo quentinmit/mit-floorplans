@@ -88,9 +88,8 @@ class Meta(type):
         return type.__new__(cls, name, bases, attr)
 
 class _ParseClass(object, metaclass=Meta):
-    @classmethod
-    def parsepage(cls, page, canvas=None):
-        self = cls()
+    def parsepage(self, page):
+        print(page)
         contents = page.Contents
         if getattr(contents, 'Filter', None) is not None:
             raise SystemExit('Cannot parse graphics -- page encoded with %s'
@@ -100,9 +99,10 @@ class _ParseClass(object, metaclass=Meta):
         else:
             self.tokens = iter(PdfTokens(contents.stream))
         self.params = params = []
-        self.canv = canvas
+        self.page = page
         self.gpath = None
         self.tpath = None
+        self.marked_tag = None
         self.fontdict = dict((x, FontInfo(y)) for
                              (x, y) in page.Resources.Font.items())
 
@@ -137,6 +137,11 @@ class _ParseClass(object, metaclass=Meta):
             print(func.token, params)
             func(self, *params)
             params[:] = []
+
+class Pdf2ReportLab(_ParseClass):
+    def parsepage(self, page, canvas):
+        self.canv = canvas
+        super().parsepage(page)
 
     #############################################################################
     # Graphics parsing
@@ -429,34 +434,54 @@ class _ParseClass(object, metaclass=Meta):
         # TODO: Need to do this
         pass
 
+    #############################################################################
+    # Text parsing
+    @token('BMC', 'n')
+    def parse_begin_marked_content(self, tag):
+        print("begin marked content", tag)
+        assert self.marked_tag is None
+        self.marked_tag = tag
+
+    @token('BDC', 'nn')
+    def parse_begin_marked_content_props(self, tag, properties):
+        print("begin marked content", tag, properties)
+        assert self.marked_tag is None
+        self.marked_tag = tag
+        properties = self.page.Resources.Properties[properties]
+        print(properties)
+
+    @token('EMC')
+    def parse_end_marked_content(self):
+        assert self.marked_tag is not None
+        self.marked_tag = None
 
 
 
 def debugparser(undisturbed=set('parse_array'.split())):
-    def debugdispatch():
-        def getvalue(oldval):
-            name = oldval[0].__name__
-
-            def myfunc(self, token, params):
-                print ('%s called %s(%s)' % (token, name,
-                       ', '.join(str(x) for x in params)))
+    def wrap(cls):
+        for name in dir(cls):
             if name in undisturbed:
-                myfunc = oldval[0]
-            return myfunc, oldval[1]
-        return dict((x, getvalue(y))
-                    for (x, y) in _ParseClass.dispatch.items())
+                continue
+            old = getattr(cls, name)
+            if not hasattr(old, 'token'):
+                continue
+            def myfunc(self, *args, **kwargs):
+                print ('%s called %s(%s)' % (old.token, name,
+                       ', '.join(str(x) for x in args)))
+            setattr(old, name, myfunc)
+        return cls
+    return wrap
 
-    class _DebugParse(_ParseClass):
-        dispatch = debugdispatch()
-
-    return _DebugParse.parsepage
+@debugparser
+class _DebugParseClass(_ParseClass):
+    pass
 
 parsepage = _ParseClass.parsepage
 
 if __name__ == '__main__':
     import sys
     from pdfrw import PdfReader
-    parse = debugparser()
+    parse = _DebugParseClass.parsepage
     fname, = sys.argv[1:]
     pdf = PdfReader(fname, decompress=True)
     for i, page in enumerate(pdf.pages):
