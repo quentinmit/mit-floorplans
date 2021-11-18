@@ -16,7 +16,7 @@ import os
 import reportlab.pdfgen.canvas
 #from reportlab.pdfgen.canvas import Canvas
 
-from decodegraphics import Pdf2ReportLab
+from decodegraphics import Pdf2ReportLab, debugparser
 from pdfrw import PdfReader, PdfWriter, PdfArray
 
 inpfn, = sys.argv[1:]

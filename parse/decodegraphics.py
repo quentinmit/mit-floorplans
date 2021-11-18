@@ -84,12 +84,11 @@ class Meta(type):
         for obj in attr.values():
             if hasattr(obj, 'token'):
                 dispatch[obj.token] = obj
-        attr['dispatch'] = dispatch.get
+        attr['dispatch'] = dispatch
         return type.__new__(cls, name, bases, attr)
 
 class _ParseClass(object, metaclass=Meta):
     def parsepage(self, page):
-        print(page)
         contents = page.Contents
         if getattr(contents, 'Filter', None) is not None:
             raise SystemExit('Cannot parse graphics -- page encoded with %s'
@@ -104,15 +103,15 @@ class _ParseClass(object, metaclass=Meta):
         self.tpath = None
         self.marked_tag = None
         self.fontdict = dict((x, FontInfo(y)) for
-                             (x, y) in page.Resources.Font.items())
+                             (x, y) in (page.Resources.Font or {}).items())
 
         for token in self.tokens:
-            func = self.dispatch(token)
+            func = self.dispatch.get(token)
             if func is None:
                 params.append(token)
                 continue
             if func.paraminfo is None:
-                func(self, token, ())
+                func(self)
                 continue
             delta = len(params) - len(func.paraminfo)
             if delta:
@@ -134,7 +133,6 @@ class _ParseClass(object, metaclass=Meta):
                     except:
                         raise  # For now
                     continue
-            print(func.token, params)
             func(self, *params)
             params[:] = []
 
@@ -185,6 +183,8 @@ class Pdf2ReportLab(_ParseClass):
 
     @token('d', 'as')
     def parse_dash(self, array, phase):  # Array, string
+        if not array:
+            return
         self.canv.setDash(array, phase)
 
     @token('ri', 'n')
@@ -449,27 +449,36 @@ class Pdf2ReportLab(_ParseClass):
         self.marked_tag = tag
         properties = self.page.Resources.Properties[properties]
         print(properties)
+        if properties.get('/Type') == '/OCG':
+            self.current_ocg = properties.Name
+            if self.current_ocg in ('(A-SHBD)', '(A-VIEW)'):
+                self.canv.saveState()
+                #self.canv.translate(-10000, 0)
 
     @token('EMC')
     def parse_end_marked_content(self):
+        print("end marked content")
         assert self.marked_tag is not None
         self.marked_tag = None
+        if self.current_ocg in ('(A-SHBD)', '(A-VIEW)'):
+            self.canv.restoreState()
 
 
 
 def debugparser(undisturbed=set('parse_array'.split())):
     def wrap(cls):
-        for name in dir(cls):
+        class inner(cls):
+            dispatch = dict(cls.dispatch.items())
+        for token, old in cls.dispatch.items():
+            name = old.__name__
             if name in undisturbed:
                 continue
-            old = getattr(cls, name)
-            if not hasattr(old, 'token'):
-                continue
             def myfunc(self, *args, **kwargs):
-                print ('%s called %s(%s)' % (old.token, name,
+                print('%s called %s(%s)' % (token, name,
                        ', '.join(str(x) for x in args)))
-            setattr(old, name, myfunc)
-        return cls
+                old(self, *args, **kwargs)
+            inner.dispatch[name] = myfunc
+        return inner
     return wrap
 
 @debugparser
