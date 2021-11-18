@@ -16,11 +16,11 @@ import os
 
 import numpy as np
 import drawSvg as draw
+from pdfrw import PdfReader, PdfWriter, PdfArray, PdfString
 #import reportlab.pdfgen.canvas
 #from reportlab.pdfgen.canvas import Canvas
 
 from decodegraphics import BaseParser, debugparser, token
-from pdfrw import PdfReader, PdfWriter, PdfArray
 
 
 logger = logging.getLogger('pdf2svg')
@@ -30,13 +30,29 @@ def mat(a,b,c,d,e,f):
     return np.array([[a,b,0],[c,d,0],[e,f,1]])
 
 
+def mat2transform(matrix):
+    return 'matrix(%f,%f,%f,%f,%f,%f)' % tuple(matrix[:,:2].flatten())
+
+
 @debugparser()
 class Pdf2Svg(BaseParser):
     def parsepage(self, page, top):
+        logging.debug("page %s", page)
+        logging.debug("resources %s", page.Resources)
+
         self.top = top
         self.stack = [top]
         self.last = top
         self.gpath = None
+
+        # initialize text state
+        self.tmat = None
+        self.tc = 0 # charspacing
+        self.tw = 0 # wordspacing
+        self.th = 1 # horiz scale
+        self.tl = 0 # leading
+        self.trise = 0 # rise
+
         if page.Rotate and int(page.Rotate) == 270:
             self.gstate(_matrix=mat(0,-1,1,0,self.top.width,0))
         self.gstate(_matrix=mat(1,0,0,-1,0,0))
@@ -44,21 +60,34 @@ class Pdf2Svg(BaseParser):
     #############################################################################
     # Graphics parsing
 
+    def log_stack(self, name):
+        out = []
+        for element in self.stack:
+            item = element.__class__.__name__
+            if hasattr(element, 'args') and 'class' in element.args:
+                item += '.' + element.args['class']
+            out.append(item)
+        logger.debug("%s() new stack = %s", name, ', '.join(out))
+
     @token('q')
-    def parse_savestate(self):
-        g = draw.Group(class_='savestate')
+    def parse_savestate(self, class_='savestate'):
+        g = draw.Group(class_=class_)
         self.stack[-1].append(g)
         self.stack.append(g)
         self.last = g
-        logger.debug("savestate() new stack = %s", self.stack)
+        self.log_stack("savestate")
 
     @token('Q')
-    def parse_restorestate(self):
-        while self.stack[-1].args.get("class") != 'savestate':
-            self.stack.pop()
-        self.stack.pop()
+    def parse_restorestate(self, class_='savestate'):
+        i = len(self.stack)-1
+        while i > 0 and self.stack[i].args.get("class") != class_:
+            i -= 1
+        if i == 0:
+            logging.error("tried to restore state that isn't on the stack")
+            return
+        self.stack = self.stack[:i]
         self.last = None
-        logger.debug("restorestate() new stack = %s", self.stack)
+        self.log_stack("restorestate")
 
     def add(self, element):
         self.stack[-1].append(element)
@@ -85,7 +114,7 @@ class Pdf2Svg(BaseParser):
         if _matrix is not None:
             if 'transform' in self.last.args:
                 _matrix = np.dot(_matrix, self.last.matrix)
-            self.last.args['transform'] = 'matrix(%f,%f,%f,%f,%f,%f)' % tuple(_matrix[:,:2].flatten())
+            self.last.args['transform'] = mat2transform(_matrix)
             self.last.matrix = _matrix
 
     @token('cm', 'ffffff')
@@ -147,22 +176,30 @@ class Pdf2Svg(BaseParser):
         if self.gpath is None:
             self.gpath = draw.Path()
             # N.B. The path is not drawn until the paint operator, so we can't add it to the tree yet.
+            self.path_bounds = None
+
+    def touch_point(self, x, y):
+        self.current_point = (x, y)
+        if not self.path_bounds:
+            self.path_bounds = (x,y,x,y)
+        x1,y1,x2,y2 = self.path_bounds
+        self.path_bounds = (min(x, x1), min(y, y1), max(x, x2), max(y, y2))
 
     @token('m', 'ff')
     def parse_move(self, x, y):
         self.start_path()
         self.gpath.M(x, -y)
-        self.current_point = (x, y)
+        self.touch_point(x, y)
 
     @token('l', 'ff')
     def parse_line(self, x, y):
         self.gpath.L(x, -y)
-        self.current_point = (x, y)
+        self.touch_point(x, y)
 
     @token('c', 'ffffff')
     def parse_curve(self, x1, y1, x2, y2, x, y):
         self.gpath.C(x1, -y1, x2, -y2, x, -y)
-        self.current_point = (x, y)
+        self.touch_point(x, y)
 
     @token('v', 'ffff')
     def parse_curve1(self, x2, y2, x, y):
@@ -282,55 +319,55 @@ class Pdf2Svg(BaseParser):
 
     @token('BT')
     def parse_begin_text(self):
-        assert self.tpath is None
-        self.tpath = self.canv.beginText()
-        self.tpath._setFont(self.curfont.name, self.curfontsize)
-        assert self.tpath
+        assert self.tmat is None
+        self.tmat = self.tlmat = mat(1,0,0,1,0,0)
+        #self.tpath = draw.Text([], self.curfontsize)
+        # XXX: self.curfont.name
+        #assert self.tpath
 
     @token('Tm', 'ffffff')
-    def parse_text_transform(self, *matrix):
-        path = self.tpath
-
-        # Stoopid optimization to remove nop
-        try:
-            code = path._code
-        except AttributeError:
-            pass
-        else:
-            if code[-1] == '1 0 0 1 0 0 Tm':
-                code.pop()
-
-        path.setTextTransform(*matrix)
+    def parse_text_transform(self, a,b,c,d,e,f):
+        # The matrix is *not* concatenated onto the current text matrix.
+        self.tmat = self.tlmat = mat(a,b,c,d,e,f)
+        #self.tmat = np.dot(mat(a,b,c,d,e,f), self.tmat)
 
     @token('Tr', 'i')
     def parse_text_rendering_mode(self, mode):
+        # XXX
         pass
 
     @token('Tf', 'nf')
     def parse_setfont(self, name, size):
         fontinfo = self.fontdict[name]
-        if self.tpath:
-            self.tpath._setFont(fontinfo.name, size)
+        #if self.tpath:
+        #    self.tpath._setFont(fontinfo.name, size)
         self.curfont = fontinfo
-        self.curfontsize = size
+        self.curfontsize = 12#size
 
     @token('Tj', 't')
     def parse_text_out(self, text):
-        #text = text.decode(self.curfont.remap, self.curfont.twobyte)
-        print("text", text.to_unicode())
-        self.tpath.textOut(text.to_unicode())
+        logging.info("text %s", text.to_unicode())
+        matrix = np.dot(mat(self.curfontsize*self.th,0,0,self.curfontsize,0,self.trise), self.tmat)
+        # XXX Update tmat by x += ((w0-(Tj/1000))*tfs+tc+tw)*th
+        self.add(
+            draw.Text(
+                text=text.to_unicode(),
+                fontSize=self.curfontsize,
+                x=0, y=0, # positioning by transform
+                transform=mat2transform(np.dot(mat(1,0,0,-1,0,0), matrix)),
+            )
+        )
 
     @token("'", 't')
     def parse_lf_text_out(self, text):
-        self.tpath.textLine()
+        self.parse_text_line()
         self.parse_text_out(text)
 
     @token('"', 'fft')
     def parse_lf_text_out_with_spacing(self, wordspace, charspace, text):
-        self.tpath.setWordSpace(wordspace)
-        self.tpath.setCharSpace(charspace)
-        self.tpath.textLine()
-        self.parse_text_out(text)
+        self.parse_set_word_space(wordspace)
+        self.parse_set_char_space(charspace)
+        self.parse_lf_text_out(text)
 
     @token('TJ', 'a')
     def parse_TJ(self, array):
@@ -345,68 +382,98 @@ class Pdf2Svg(BaseParser):
                 # TODO: Adjust spacing between characters here
                 int(x)
         text = ''.join(result)
-        self.tpath.textOut(text)
+        self.parse_text_out(text)
 
     @token('ET')
     def parse_end_text(self):
-        assert self.tpath is not None
-        self.canv.drawText(self.tpath)
-        self.tpath = None
+        assert self.tmat is not None
+        self.tmat = None
 
     @token('Td', 'ff')
     def parse_move_cursor(self, tx, ty):
-        self.tpath.moveCursor(tx, -ty)
+        self.tmat = self.tlmat = np.dot(mat(1,0,0,1,tx,ty), self.tlmat)
 
     @token('TL', 'f')
     def parse_set_leading(self, leading):
-        self.tpath.setLeading(leading)
+        self.tl = leading
 
     @token('T*')
     def parse_text_line(self):
-        self.tpath.textLine()
+        self.parse_move_cursor(0, self.tl)
 
     @token('Tc', 'f')
     def parse_set_char_space(self, charspace):
-        self.tpath.setCharSpace(charspace)
+        self.tc = charspace
 
     @token('Tw', 'f')
     def parse_set_word_space(self, wordspace):
-        self.tpath.setWordSpace(wordspace)
+        self.tw = wordspace
 
     @token('Tz', 'f')
     def parse_set_hscale(self, scale):
-        self.tpath.setHorizScale(scale - 100)
+        self.th = scale / 100
 
     @token('Ts', 'f')
     def parse_set_rise(self, rise):
-        self.tpath.setRise(rise)
+        self.trise = rise
 
     @token('Do', 'n')
     def parse_xobject(self, name):
         # TODO: Need to do this
         pass
 
+    #############################################################################
+    # Tag parsing
+    @token('BMC', 'n')
+    def parse_begin_marked_content(self, tag):
+        logger.debug("begin marked content %s", tag)
+        assert self.marked_tag is None
+        self.marked_tag = tag[1:]
+        self.parse_savestate(class_=self.marked_tag)
 
-logging.basicConfig(level=logging.DEBUG)
+    @token('BDC', 'nn')
+    def parse_begin_marked_content_props(self, tag, properties):
+        logger.debug("begin marked content %s %s", tag, properties)
+        assert self.marked_tag is None
+        self.marked_tag = tag[1:]
+        properties = self.page.Resources.Properties[properties]
+        logger.debug(properties)
+        if properties.get('/Type') == '/OCG':
+            self.current_ocg = properties.Name
+            self.parse_savestate(class_=self.marked_tag)
+            self.last.args['title'] = self.current_ocg
 
-inpfn, = sys.argv[1:]
-outfn = 'copy.' + os.path.basename(inpfn)
-pages = PdfReader(inpfn, decompress=True).pages
+    @token('EMC')
+    def parse_end_marked_content(self):
+        logger.debug("end marked content %s", self.marked_tag)
+        assert self.marked_tag is not None
+        self.parse_restorestate(class_=self.marked_tag)
+        self.marked_tag = None
+        #if self.current_ocg in ('(A-SHBD)', '(A-VIEW)'):
+        #    self.canv.restoreState()
 
-parser = Pdf2Svg()
 
-sys.setrecursionlimit(sys.getrecursionlimit()*2)
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
 
-for page in pages:
-    box = [float(x) for x in page.MediaBox]
-    assert box[0] == box[1] == 0, "demo won't work on this PDF"
-    _, _, width, height = box
-    rotate = 0
-    if '/Rotate' in page:
-        rotate = int(page.Rotate)
-        if rotate % 180 == 90:
-            width, height = height, width
-    d = draw.Drawing(width, height)
-    parser.parsepage(page, d)
-    print(d.asSvg())
+    inpfn, = sys.argv[1:]
+    outfn = 'copy.' + os.path.basename(inpfn)
+    pages = PdfReader(inpfn, decompress=True).pages
+
+    parser = Pdf2Svg()
+
+    sys.setrecursionlimit(sys.getrecursionlimit()*2)
+
+    for page in pages:
+        box = [float(x) for x in page.MediaBox]
+        assert box[0] == box[1] == 0, "demo won't work on this PDF"
+        _, _, width, height = box
+        rotate = 0
+        if '/Rotate' in page:
+            rotate = int(page.Rotate)
+            if rotate % 180 == 90:
+                width, height = height, width
+        d = draw.Drawing(width, height)
+        parser.parsepage(page, d)
+        print(d.asSvg())
 

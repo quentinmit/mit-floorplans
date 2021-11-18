@@ -32,6 +32,7 @@ class FontInfo(object):
              }
 
     def __init__(self, source):
+        logger.debug("font %s", source)
         name = source.BaseFont[1:]
         self.name = self.lookup.get(name, name)
         self.remap = chr
