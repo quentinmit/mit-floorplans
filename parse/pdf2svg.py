@@ -14,6 +14,7 @@ import logging
 import sys
 import os
 
+import numpy as np
 import drawSvg as draw
 #import reportlab.pdfgen.canvas
 #from reportlab.pdfgen.canvas import Canvas
@@ -25,6 +26,10 @@ from pdfrw import PdfReader, PdfWriter, PdfArray
 logger = logging.getLogger('pdf2svg')
 
 
+def mat(a,b,c,d,e,f):
+    return np.array([[a,b,0],[c,d,0],[e,f,1]])
+
+
 @debugparser()
 class Pdf2Svg(BaseParser):
     def parsepage(self, page, top):
@@ -32,6 +37,9 @@ class Pdf2Svg(BaseParser):
         self.stack = [top]
         self.last = top
         self.gpath = None
+        if page.Rotate and int(page.Rotate) == 270:
+            self.gstate(_matrix=mat(0,-1,1,0,self.top.width,0))
+        self.gstate(_matrix=mat(1,0,0,-1,0,0))
         super().parsepage(page)
     #############################################################################
     # Graphics parsing
@@ -57,22 +65,33 @@ class Pdf2Svg(BaseParser):
         self.last = element
         logger.debug("added %s to %s", element, self.stack[-1])
 
-    def gstate(self, **kwargs):
+    def gstate(self, _matrix=None, **kwargs):
         if not isinstance(self.last, draw.Group):
             #if len(self.stack) > 1:
             #    oldg = self.stack.pop()
             # XXX: close last group and copy settings?
             g = draw.Group()
+            if isinstance(self.stack[-1], draw.Group) and len(self.stack[-1].args) == 1 and 'transform' in self.stack[-1].args:
+                # Special-case transformations
+                _matrix = np.dot(_matrix, self.stack[-1].matrix)
+                self.stack.pop()
             self.stack[-1].append(g)
             self.stack.append(g)
             self.last = g
         # XXX: Create new g if overriding the same value (can this happen?)
         for k, v in kwargs.items():
+            k = k.replace("_", "-")
             self.last.args[k] = v
+        if _matrix is not None:
+            if 'transform' in self.last.args:
+                _matrix = np.dot(_matrix, self.last.matrix)
+            self.last.args['transform'] = 'matrix(%f,%f,%f,%f,%f,%f)' % tuple(_matrix[:,:2].flatten())
+            self.last.matrix = _matrix
 
     @token('cm', 'ffffff')
-    def parse_transform(self, *params):
-        self.gstate(transform='matrix(%f,%f,%f,%f,%f,%f)' % params)
+    def parse_transform(self, a,b,c,d,e,f):
+        self.gstate(_matrix=mat(a,b,c,d,e,f))
+        self.stack[-1].matrix
 
     @token('w', 'f')
     def parse_linewidth(self, width):
@@ -132,17 +151,17 @@ class Pdf2Svg(BaseParser):
     @token('m', 'ff')
     def parse_move(self, x, y):
         self.start_path()
-        self.gpath.M(x, y)
+        self.gpath.M(x, -y)
         self.current_point = (x, y)
 
     @token('l', 'ff')
     def parse_line(self, x, y):
-        self.gpath.L(x, y)
+        self.gpath.L(x, -y)
         self.current_point = (x, y)
 
     @token('c', 'ffffff')
     def parse_curve(self, x1, y1, x2, y2, x, y):
-        self.gpath.C(x1, y1, x2, y2, x, y)
+        self.gpath.C(x1, -y1, x2, -y2, x, -y)
         self.current_point = (x, y)
 
     @token('v', 'ffff')
@@ -381,12 +400,13 @@ sys.setrecursionlimit(sys.getrecursionlimit()*2)
 for page in pages:
     box = [float(x) for x in page.MediaBox]
     assert box[0] == box[1] == 0, "demo won't work on this PDF"
-    d = draw.Drawing(box[2], box[3])
+    _, _, width, height = box
+    rotate = 0
     if '/Rotate' in page:
-        #if int(page.Rotate) == 90 or int(page.Rotate) == 270:
-        #    box[2:] = reversed(box[2:])
-        if int(page.Rotate) != 0:
-            d.svgArgs["transform"] = "rotate(%d)" % int(page.Rotate)
+        rotate = int(page.Rotate)
+        if rotate % 180 == 90:
+            width, height = height, width
+    d = draw.Drawing(width, height)
     parser.parsepage(page, d)
     print(d.asSvg())
 
