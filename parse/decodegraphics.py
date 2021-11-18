@@ -13,6 +13,7 @@ Better to use Form XObjects for most things (see the example in rl1).
 '''
 from inspect import getargspec
 from itertools import chain
+import logging
 
 from pdfrw import PdfTokens
 from pdfrw.objects import PdfString
@@ -81,13 +82,15 @@ def token(token, params=''):
 class Meta(type):
     def __new__(cls, name, bases, attr):
         dispatch = dict()
+        for b in bases:
+            dispatch.update(getattr(b, "dispatch", {}))
         for obj in attr.values():
             if hasattr(obj, 'token'):
                 dispatch[obj.token] = obj
         attr['dispatch'] = dispatch
         return type.__new__(cls, name, bases, attr)
 
-class _ParseClass(object, metaclass=Meta):
+class BaseParser(object, metaclass=Meta):
     def parsepage(self, page):
         contents = page.Contents
         if getattr(contents, 'Filter', None) is not None:
@@ -116,17 +119,18 @@ class _ParseClass(object, metaclass=Meta):
             delta = len(params) - len(func.paraminfo)
             if delta:
                 if delta < 0:
-                    print ('Operator %s expected %s parameters, got %s' %
+                    logger.error('Operator %s expected %s parameters, got %s' %
                            (token, len(func.paraminfo), params))
                     params[:] = []
                     continue
                 else:
-                    print ("Unparsed parameters/commands: %s" % params[:delta])
+                    logger.warning("Unparsed parameters/commands: %s" % params[:delta])
                 del params[:delta]
             paraminfo = zip(func.paraminfo, params)
             try:
                 params[:] = [x(y) for (x, y) in paraminfo]
             except:
+                raise
                 for i, (x, y) in enumerate(func.paraminfo):
                     try:
                         x(y)
@@ -136,14 +140,6 @@ class _ParseClass(object, metaclass=Meta):
             func(self, *params)
             params[:] = []
 
-class Pdf2ReportLab(_ParseClass):
-    def parsepage(self, page, canvas):
-        self.canv = canvas
-        super().parsepage(page)
-
-    #############################################################################
-    # Graphics parsing
-
     @token('[', None)
     def parse_array(self):
         mylist = []
@@ -152,6 +148,14 @@ class Pdf2ReportLab(_ParseClass):
                 break
             mylist.append(token)
         self.params.append(mylist)
+
+class Pdf2ReportLab(BaseParser):
+    def parsepage(self, page, canvas):
+        self.canv = canvas
+        super().parsepage(page)
+
+    #############################################################################
+    # Graphics parsing
 
     @token('q')
     def parse_savestate(self):
@@ -464,6 +468,7 @@ class Pdf2ReportLab(_ParseClass):
             self.canv.restoreState()
 
 
+logger = logging.getLogger("decodegraphics")
 
 def debugparser(undisturbed=set('parse_array'.split())):
     def wrap(cls):
@@ -473,19 +478,22 @@ def debugparser(undisturbed=set('parse_array'.split())):
             name = old.__name__
             if name in undisturbed:
                 continue
-            def myfunc(self, *args, **kwargs):
-                print('%s called %s(%s)' % (token, name,
-                       ', '.join(str(x) for x in args)))
+            def myfunc(self, *args, old=old, **kwargs):
+                logger.debug('%s called %s(%s)' % (
+                    old.token, old.__name__,
+                    ', '.join(repr(x) for x in args)))
                 old(self, *args, **kwargs)
-            inner.dispatch[name] = myfunc
+            myfunc.token = old.token
+            myfunc.paraminfo = old.paraminfo
+            inner.dispatch[token] = myfunc
         return inner
     return wrap
 
 @debugparser
-class _DebugParseClass(_ParseClass):
+class _DebugParseClass(Pdf2ReportLab):
     pass
 
-parsepage = _ParseClass.parsepage
+parsepage = Pdf2ReportLab().parsepage
 
 if __name__ == '__main__':
     import sys
