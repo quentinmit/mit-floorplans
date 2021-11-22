@@ -8,7 +8,7 @@ import numpy as np
 import drawSvg as draw
 from pdfrw import PdfReader, PdfWriter, PdfArray, PdfString
 
-from pdf2svg import Pdf2Svg, token, mat
+from pdf2svg import Pdf2Svg, Group, token, mat
 
 logger = logging.getLogger('extractfloorplan')
 
@@ -26,7 +26,7 @@ class Floorplan2Svg(Pdf2Svg):
             new = np.dot(_matrix, self.stack_matrix())
             logger.info("new gstate is at %s, height=%s", new[2], self.top.height)
             if new[2][1] < -0.8*self.top.height:
-                g = draw.Group()
+                g = Group()
                 g.matrix = _matrix
                 self.stack.append(g)
                 self.last = g
@@ -41,15 +41,18 @@ class Floorplan2Svg(Pdf2Svg):
 
     def finish_path(self, *args):
         if self.gpath is not None:
+            bounds = self.gpath.bounds
+            logger.info("path %s %s bounds %s", self.gpath.args['d'], self.gpath.transform, self.gpath.bounds)
             maxx, maxy, _ = np.dot((self.gpath.bounds[0], self.gpath.bounds[1], 1), self.stack_matrix())
             logger.info("path bounds %s lowest point on path (%f,%f)", self.gpath.bounds, maxx, maxy)
-            if False and maxy > -0.2*self.top.height:
+            if maxy > -0.2*self.top.height:
                 self.gpath = None
                 return
         super().finish_path(*args)
 
 def main():
     logging.basicConfig(level=logging.DEBUG)
+    logging.getLogger('decodegraphics').setLevel(logging.INFO)
 
     inpfn, = sys.argv[1:]
     outfn = 'copy.' + os.path.basename(inpfn)
@@ -71,7 +74,7 @@ def main():
         d = draw.Drawing(width, height)
         parser.parsepage(page, d)
         logger.info("page viewbox = %s", d.viewBox)
-        #logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
+        logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
         print(d.asSvg())
 
 if __name__ == '__main__':

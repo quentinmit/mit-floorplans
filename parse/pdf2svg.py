@@ -30,8 +30,11 @@ def mat(a,b,c,d,e,f):
     return np.array([[a,b,0],[c,d,0],[e,f,1]])
 
 
+IDENTITY = np.identity(3)
+
+
 class TransformMixin:
-    _matrix = np.identity(3)
+    _matrix = IDENTITY
 
     def __init__(self, *args, matrix=None, **kwargs):
         if matrix is not None:
@@ -46,7 +49,7 @@ class TransformMixin:
     @matrix.setter
     def matrix(self, matrix):
         if matrix is None:
-            self._matrix = np.identity(3)
+            self._matrix = IDENTITY
             del self.args['transform']
         else:
             self._matrix = matrix
@@ -54,25 +57,39 @@ class TransformMixin:
 
     @property
     def transform(self):
-        if (self.matrix == np.eye(3)).all():
+        if (self.matrix == IDENTITY).all():
             return None
         return 'matrix(%f,%f,%f,%f,%f,%f)' % tuple(self.matrix[:,:2].flatten())
 
+    def transformed_bounds(self, points):
+        if (self.matrix == IDENTITY).all():
+            minx = min(x for x, _ in points)
+            miny = min(y for _, y in points)
+            maxx = max(x for x, _ in points)
+            maxy = max(y for _, y in points)
+            return (minx,miny,maxx,maxy)
+        points = np.array(points).reshape((-1, 2))
+        points = np.hstack((points, np.ones(points.shape[:-1] + (1,))))
+        # matrix of (x,y,1) rows
+        # apply transformation first because it can change x and y
+        points = np.dot(points, self.matrix)
+        minx,miny,_ = np.min(points, axis=0)
+        maxx,maxy,_ = np.max(points, axis=0)
+        #logger.debug("bounds of %s = %s", self, (minx,miny,maxx,maxy))
+        return (minx,miny,maxx,maxy)
+
 
 class Group(TransformMixin, draw.Group):
+    current_offset = (0,0)
     @property
     def bounds(self):
-        child_bounds = [c.bounds for c in self.children if hasattr(c, 'bounds') and c.bounds is not None]
+        child_bounds = [c.bounds for c in self.children]
+        child_bounds = [b for b in child_bounds if b is not None]
         if not child_bounds:
             return None
         child_bounds = np.array(child_bounds).reshape((-1, 2))
-        child_bounds = np.hstack((child_bounds, np.ones(child_bounds.shape[:-1] + (1,))))
-        # matrix of (x,y,1) rows
-        # apply transformation first because it can change x and y
-        child_bounds = np.dot(child_bounds, self.matrix)
-        minx,miny,_ = np.min(child_bounds, axis=0)
-        maxx,maxy,_ = np.max(child_bounds, axis=0)
-        return (minx,miny,maxx,maxy)
+        #logger.info("%s child_bounds = %s", self, child_bounds)
+        return self.transformed_bounds(child_bounds)
 
     def __str__(self):
         out = self.__class__.__name__
@@ -83,7 +100,32 @@ class Group(TransformMixin, draw.Group):
         return out
 
 class Path(TransformMixin, draw.Path):
-    pass
+    @property
+    def bounds(self):
+        points = []
+        for command in self.args['d'].split(' '):
+            args = []
+            if len(command) > 1:
+                args = [float(x) for x in command[1:].split(',')]
+            cmd = command[0]
+            if points:
+                cpx, cpy = points[-1]
+            if cmd == 'H':
+                points.append((args[0], cpy))
+            elif cmd == 'h':
+                points.append((cpx+args[0], cpy))
+            elif cmd == 'V':
+                points.append((cpx, args[0]))
+            elif cmd == 'v':
+                points.append((cpx, cpy+args[0]))
+            elif len(args) > 1:
+                if cmd.isupper():
+                    points.append((args[-2], args[-1]))
+                else:
+                    points.append((cpx+args[-2], cpy+args[-2]))
+        if not points:
+            return None
+        return self.transformed_bounds(np.array(points))
 
 class Text(TransformMixin, draw.Text):
     @property
@@ -130,6 +172,7 @@ class Pdf2Svg(BaseParser):
     @token('q')
     def parse_savestate(self, class_='savestate'):
         g = Group(class_=class_)
+        g.current_offset = self.stack[-1].current_offset
         self.stack[-1].append(g)
         self.stack.append(g)
         self.last = g
@@ -153,6 +196,16 @@ class Pdf2Svg(BaseParser):
         logger.debug("added %s to %s", element, self.stack[-1])
 
     def gstate(self, _matrix=None, **kwargs):
+        if _matrix is not None:
+            if (_matrix[:2] == [[1,0,0],[0,1,0]]).all():
+                # Pure offset
+                self.stack[-1].current_offset = np.add(self.stack[-1].current_offset, _matrix[2,0:2])
+                _matrix = None
+            elif hasattr(self.stack[-1], 'current_offset'):
+                x,y = self.stack[-1].current_offset
+                _matrix = np.dot(_matrix, mat(1,0,0,1,x,y))
+        if _matrix is None and len(kwargs) == 0:
+            return
         if not isinstance(self.last, Group):
             #if len(self.stack) > 1:
             #    oldg = self.stack.pop()
@@ -178,6 +231,9 @@ class Pdf2Svg(BaseParser):
             if hasattr(self.last, 'matrix'):
                 _matrix = np.dot(_matrix, self.last.matrix)
             self.last.matrix = _matrix
+
+    def offset(self, x, y):
+        return np.add(self.stack[-1].current_offset, (x,y))
 
     @token('cm', 'ffffff')
     def parse_transform(self, a,b,c,d,e,f):
@@ -238,28 +294,28 @@ class Pdf2Svg(BaseParser):
         if self.gpath is None:
             self.gpath = Path()
             # N.B. The path is not drawn until the paint operator, so we can't add it to the tree yet.
-            self.gpath.bounds = None
 
     def touch_point(self, x, y):
         self.current_point = (x, y)
-        if not self.gpath.bounds:
-            self.gpath.bounds = (x,y,x,y)
-        x1,y1,x2,y2 = self.gpath.bounds
-        self.gpath.bounds = (min(x, x1), min(y, y1), max(x, x2), max(y, y2))
 
     @token('m', 'ff')
     def parse_move(self, x, y):
+        x,y = self.offset(x,y)
         self.start_path()
         self.gpath.M(x, -y)
         self.touch_point(x, y)
 
     @token('l', 'ff')
     def parse_line(self, x, y):
+        x,y = self.offset(x,y)
         self.gpath.L(x, -y)
         self.touch_point(x, y)
 
     @token('c', 'ffffff')
     def parse_curve(self, x1, y1, x2, y2, x, y):
+        x1,y1 = self.offset(x1,y1)
+        x2,y2 = self.offset(x2,y2)
+        x,y = self.offset(x,y)
         self.gpath.C(x1, -y1, x2, -y2, x, -y)
         self.touch_point(x, y)
 
@@ -339,6 +395,13 @@ class Pdf2Svg(BaseParser):
                 self.gpath.args["stroke"] = "none"
             if not fill:
                 self.gpath.args["fill"] = "none"
+            if isinstance(self.last, Path):
+                a1 = {k:v for k,v in self.gpath.args.items() if k != 'd'}
+                a2 = {k:v for k,v in self.last.args.items() if k != 'd'}
+                if a1 == a2 and len(self.last.args['d']) < 1024 and self.gpath.args['d'][0] == 'M':
+                    logging.info('extending %s', self.last)
+                    self.last.args['d'] += ' ' + self.gpath.args['d']
+                    return
             self.add(self.gpath)
             self.gpath = None
 
