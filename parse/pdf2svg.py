@@ -30,12 +30,36 @@ def mat(a,b,c,d,e,f):
     return np.array([[a,b,0],[c,d,0],[e,f,1]])
 
 
-def mat2transform(matrix):
-    return 'matrix(%f,%f,%f,%f,%f,%f)' % tuple(matrix[:,:2].flatten())
+class TransformMixin:
+    _matrix = np.identity(3)
 
-class Group(draw.Group):
-    matrix = np.identity(3)
+    def __init__(self, *args, matrix=None, **kwargs):
+        if matrix is not None:
+            self._matrix = matrix
+            kwargs['transform'] = self.transform
+        super().__init__(*args, **kwargs)
 
+    @property
+    def matrix(self):
+        return self._matrix
+
+    @matrix.setter
+    def matrix(self, matrix):
+        if matrix is None:
+            self._matrix = np.identity(3)
+            del self.args['transform']
+        else:
+            self._matrix = matrix
+            self.args['transform'] = self.transform
+
+    @property
+    def transform(self):
+        if (self.matrix == np.eye(3)).all():
+            return None
+        return 'matrix(%f,%f,%f,%f,%f,%f)' % tuple(self.matrix[:,:2].flatten())
+
+
+class Group(TransformMixin, draw.Group):
     @property
     def bounds(self):
         child_bounds = [c.bounds for c in self.children if hasattr(c, 'bounds') and c.bounds is not None]
@@ -54,9 +78,22 @@ class Group(draw.Group):
         out = self.__class__.__name__
         if 'class' in self.args:
             out += '.' + self.args['class']
-        if not (self.matrix == np.eye(3)).all():
-            out += ' transform(%s)' % (self.matrix[:,:2].flatten())
+        if self.transform:
+            out += ' transform(%s)' % (self.transform)
         return out
+
+class Path(TransformMixin, draw.Path):
+    pass
+
+class Text(TransformMixin, draw.Text):
+    @property
+    def bounds(self):
+        if 'x' in self.args and 'y' in self.args:
+            # TODO: Calculate width
+            x,y = self.args['x'], self.args['y']
+            return np.dot([[x,y,1],[x,y,1]], self.matrix)[:,:2].flatten()
+        return None
+
 
 @debugparser()
 class Pdf2Svg(BaseParser):
@@ -120,11 +157,16 @@ class Pdf2Svg(BaseParser):
             #if len(self.stack) > 1:
             #    oldg = self.stack.pop()
             # XXX: close last group and copy settings?
-            g = Group()
             if isinstance(self.stack[-1], Group) and len(self.stack[-1].args) == 1 and 'transform' in self.stack[-1].args:
-                # Special-case transformations
-                _matrix = np.dot(_matrix, self.stack[-1].matrix)
-                self.stack.pop()
+                # Special-case bare transformations
+                g = self.stack.pop()
+                i = self.stack[-1].children.index(g)
+                for child in g.children:
+                    child.matrix = np.dot(child.matrix, g.matrix)
+                # Replace group with individual children
+                self.stack[-1].children[i:i+1] = g.children
+                _matrix = np.dot(_matrix, g.matrix)
+            g = Group()
             self.stack[-1].append(g)
             self.stack.append(g)
             self.last = g
@@ -133,9 +175,8 @@ class Pdf2Svg(BaseParser):
             k = k.replace("_", "-")
             self.last.args[k] = v
         if _matrix is not None:
-            if 'transform' in self.last.args:
+            if hasattr(self.last, 'matrix'):
                 _matrix = np.dot(_matrix, self.last.matrix)
-            self.last.args['transform'] = mat2transform(_matrix)
             self.last.matrix = _matrix
 
     @token('cm', 'ffffff')
@@ -195,7 +236,7 @@ class Pdf2Svg(BaseParser):
 
     def start_path(self):
         if self.gpath is None:
-            self.gpath = draw.Path()
+            self.gpath = Path()
             # N.B. The path is not drawn until the paint operator, so we can't add it to the tree yet.
             self.gpath.bounds = None
 
@@ -342,7 +383,7 @@ class Pdf2Svg(BaseParser):
     def parse_begin_text(self):
         assert self.tmat is None
         self.tmat = self.tlmat = mat(1,0,0,1,0,0)
-        #self.tpath = draw.Text([], self.curfontsize)
+        #self.tpath = Text([], self.curfontsize)
         # XXX: self.curfont.name
         #assert self.tpath
 
@@ -371,11 +412,11 @@ class Pdf2Svg(BaseParser):
         matrix = np.dot(mat(self.curfontsize*self.th,0,0,self.curfontsize,0,self.trise), self.tmat)
         # XXX Update tmat by x += ((w0-(Tj/1000))*tfs+tc+tw)*th
         self.add(
-            draw.Text(
+            Text(
                 text=text.to_unicode(),
                 fontSize=self.curfontsize,
                 x=0, y=0, # positioning by transform
-                transform=mat2transform(np.dot(mat(1,0,0,-1,0,0), matrix)),
+                matrix=np.dot(mat(1,0,0,-1,0,0), matrix),
             )
         )
 

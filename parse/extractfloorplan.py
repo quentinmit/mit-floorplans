@@ -43,7 +43,7 @@ class Floorplan2Svg(Pdf2Svg):
         if self.gpath is not None:
             maxx, maxy, _ = np.dot((self.gpath.bounds[0], self.gpath.bounds[1], 1), self.stack_matrix())
             logger.info("path bounds %s lowest point on path (%f,%f)", self.gpath.bounds, maxx, maxy)
-            if maxy < -0.8*self.top.height:
+            if False and maxy > -0.2*self.top.height:
                 self.gpath = None
                 return
         super().finish_path(*args)
@@ -70,7 +70,8 @@ def main():
                 width, height = height, width
         d = draw.Drawing(width, height)
         parser.parsepage(page, d)
-        logger.info("%s bounds = %s", parser.stack[-1], parser.stack[-1].bounds)
+        logger.info("page viewbox = %s", d.viewBox)
+        #logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
         print(d.asSvg())
 
 if __name__ == '__main__':
