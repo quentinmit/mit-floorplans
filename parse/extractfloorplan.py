@@ -13,6 +13,7 @@ from pdf2svg import Pdf2Svg, Group, Path, token, mat, transformed_bounds, transf
 logger = logging.getLogger('extractfloorplan')
 
 class Floorplan2Svg(Pdf2Svg):
+    bogus = False
     scale = None
     north_angle = None
 
@@ -39,9 +40,13 @@ class Floorplan2Svg(Pdf2Svg):
     @token('Tj', 't')
     def parse_text_out(self, text):
         super().parse_text_out(text)
-        if '" =' in text.to_unicode():
-            self.scale = text.to_unicode()
-            logger.info("scale = %s", text.to_unicode())
+        if isinstance(text, PdfString):
+            text = text.to_unicode()
+        if '" =' in text:
+            self.scale = text
+            logger.info("scale = %s", text)
+        if "request the plan you queried" in text:
+            self.bogus = True
 
     # def finish_path(self, *args):
     #     if self.gpath is not None:
@@ -66,7 +71,65 @@ class Floorplan2Svg(Pdf2Svg):
                 if bounds[3] > -0.2*self.top.height:
                     parent.children.remove(child)
 
-    def find_north(self, parent, matrix):
+    def apply(self, predicate, parent=None, matrix=IDENTITY):
+        if parent:
+            matrix = np.dot(parent.matrix, matrix)
+            children = parent.children
+        else:
+            parent = self.top
+            children = parent.elements
+        for child in children:
+            if isinstance(child, Group):
+                self.apply(predicate, child, matrix)
+            else:
+                predicate(parent, child, matrix)
+
+    def find_north(self):
+        left, top, width, height = self.top.viewBox
+
+        north_bounds = [left+(0.7*width), top+(0.89*height), left+(0.76*width), top+height]
+
+        if logger.level <= logging.DEBUG:
+            p = Path(stroke="blue", fill="none")
+            p.M(north_bounds[0], -north_bounds[1])
+            p.H(north_bounds[2])
+            p.V(-north_bounds[3])
+            p.H(north_bounds[0])
+            p.V(-north_bounds[1])
+            p.Z()
+            self.top.append(p)
+
+        logger.info("North expected within %s", north_bounds)
+
+        lines = []
+        def f(parent, child, matrix):
+            if not isinstance(child, Path):
+                return
+            try:
+                bounds = transformed_bounds(child.bounds, matrix)
+            except:
+                logger.exception("bounds = %s, matrix = %s", child.bounds, matrix)
+                raise
+            if bounds[0] > north_bounds[0] and bounds[1] > north_bounds[1] and bounds[2] < north_bounds[2] and bounds[3] < north_bounds[3]:
+                commands = child.commands
+                if len(commands) == 2 and [c[0] for c in commands] == ['M', 'L']:
+                    logger.info("possible north: %s bounds %s", child, bounds)
+                    child.args["stroke"] = "blue"
+                    line = transformed_points([c[1] for c in commands], matrix)[:,:2]
+                    lines.append(line)
+
+        self.apply(f)
+
+        lines = np.array(lines)
+
+        vectors = lines[:,1,:]-lines[:,0,:]
+        logger.debug("north vectors %s", vectors)
+        angles = np.arctan2(vectors[:,1], vectors[:,0])
+        logger.info("angles = %s", angles*180/np.pi)
+        if len(angles):
+            self.north_angle = angles[1]
+
+    def find_north_old(self, parent, matrix):
         matrix = np.dot(parent.matrix, matrix)
         for child in parent.children:
             if isinstance(child, Group):
@@ -108,7 +171,7 @@ def main():
     for page in pages:
         box = [float(x) for x in page.MediaBox]
         assert box[0] == box[1] == 0, "demo won't work on this PDF"
-        _, _, width, height = box
+        left, bottom, width, height = box
         rotate = 0
         if '/Rotate' in page:
             rotate = int(page.Rotate)
@@ -116,9 +179,11 @@ def main():
                 width, height = height, width
         d = draw.Drawing(width, height)
         parser.parsepage(page, d)
+        if parser.bogus:
+            raise ValueError("missing floorplan")
         logger.info("page viewbox = %s", d.viewBox)
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
-        parser.find_north(parser.stack[1], IDENTITY)
+        parser.find_north()
         if parser.north_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
             cosA = np.cos(parser.north_angle)

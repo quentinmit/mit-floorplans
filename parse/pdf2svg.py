@@ -43,6 +43,7 @@ def transformed_points(points, matrix):
 
 
 def transformed_bounds(points, matrix):
+    points = np.array(points).reshape((-1, 2))
     if (matrix == IDENTITY).all():
         minx = min(x for x, _ in points)
         miny = min(y for _, y in points)
@@ -135,6 +136,10 @@ class Path(TransformMixin, draw.Path):
         if not points:
             return None
         return self.transformed_bounds(np.array(points))
+
+    @property
+    def commands(self):
+        return [(c[0], [float(x) for x in c[1:].split(',') if x != '']) for c in self.args['d'].split(' ')]
 
 class Text(TransformMixin, draw.Text):
     @property
@@ -415,7 +420,7 @@ class Pdf2Svg(BaseParser):
             if isinstance(self.last, Path):
                 a1 = {k:v for k,v in self.gpath.args.items() if k != 'd'}
                 a2 = {k:v for k,v in self.last.args.items() if k != 'd'}
-                if a1 == a2 and len(self.last.args['d']) < 1024 and self.gpath.args['d'][0] == 'M':
+                if a1 == a2 and len(self.last.args['d']) < 1024 and self.gpath.args['d'][0] == 'M' and False:
                     #logger.debug('extending %s', self.last)
                     self.last.args['d'] += ' ' + self.gpath.args['d']
                     return
@@ -488,12 +493,14 @@ class Pdf2Svg(BaseParser):
 
     @token('Tj', 't')
     def parse_text_out(self, text):
-        logging.info("text %s", text.to_unicode())
+        if isinstance(text, PdfString):
+            text = text.to_unicode()
+        logging.info("text %s", text)
         matrix = np.dot(mat(self.curfontsize*self.th,0,0,self.curfontsize,0,self.trise), self.tmat)
         # XXX Update tmat by x += ((w0-(Tj/1000))*tfs+tc+tw)*th
         self.add(
             Text(
-                text=text.to_unicode(),
+                text=text,
                 fontSize=self.curfontsize,
                 x=0, y=0, # positioning by transform
                 matrix=np.dot(mat(1,0,0,-1,0,0), matrix),
