@@ -33,6 +33,30 @@ def mat(a,b,c,d,e,f):
 def mat2transform(matrix):
     return 'matrix(%f,%f,%f,%f,%f,%f)' % tuple(matrix[:,:2].flatten())
 
+class Group(draw.Group):
+    matrix = np.identity(3)
+
+    @property
+    def bounds(self):
+        child_bounds = [c.bounds for c in self.children if hasattr(c, 'bounds') and c.bounds is not None]
+        if not child_bounds:
+            return None
+        child_bounds = np.array(child_bounds).reshape((-1, 2))
+        child_bounds = np.hstack((child_bounds, np.ones(child_bounds.shape[:-1] + (1,))))
+        # matrix of (x,y,1) rows
+        # apply transformation first because it can change x and y
+        child_bounds = np.dot(child_bounds, self.matrix)
+        minx,miny,_ = np.min(child_bounds, axis=0)
+        maxx,maxy,_ = np.max(child_bounds, axis=0)
+        return (minx,miny,maxx,maxy)
+
+    def __str__(self):
+        out = self.__class__.__name__
+        if 'class' in self.args:
+            out += '.' + self.args['class']
+        if not (self.matrix == np.eye(3)).all():
+            out += ' transform(%s)' % (self.matrix[:,:2].flatten())
+        return out
 
 @debugparser()
 class Pdf2Svg(BaseParser):
@@ -63,15 +87,12 @@ class Pdf2Svg(BaseParser):
     def log_stack(self, name):
         out = []
         for element in self.stack:
-            item = element.__class__.__name__
-            if hasattr(element, 'args') and 'class' in element.args:
-                item += '.' + element.args['class']
-            out.append(item)
+            out.append(str(element))
         logger.debug("%s() new stack = %s", name, ', '.join(out))
 
     @token('q')
     def parse_savestate(self, class_='savestate'):
-        g = draw.Group(class_=class_)
+        g = Group(class_=class_)
         self.stack[-1].append(g)
         self.stack.append(g)
         self.last = g
@@ -95,12 +116,12 @@ class Pdf2Svg(BaseParser):
         logger.debug("added %s to %s", element, self.stack[-1])
 
     def gstate(self, _matrix=None, **kwargs):
-        if not isinstance(self.last, draw.Group):
+        if not isinstance(self.last, Group):
             #if len(self.stack) > 1:
             #    oldg = self.stack.pop()
             # XXX: close last group and copy settings?
-            g = draw.Group()
-            if isinstance(self.stack[-1], draw.Group) and len(self.stack[-1].args) == 1 and 'transform' in self.stack[-1].args:
+            g = Group()
+            if isinstance(self.stack[-1], Group) and len(self.stack[-1].args) == 1 and 'transform' in self.stack[-1].args:
                 # Special-case transformations
                 _matrix = np.dot(_matrix, self.stack[-1].matrix)
                 self.stack.pop()
@@ -176,14 +197,14 @@ class Pdf2Svg(BaseParser):
         if self.gpath is None:
             self.gpath = draw.Path()
             # N.B. The path is not drawn until the paint operator, so we can't add it to the tree yet.
-            self.path_bounds = None
+            self.gpath.bounds = None
 
     def touch_point(self, x, y):
         self.current_point = (x, y)
-        if not self.path_bounds:
-            self.path_bounds = (x,y,x,y)
-        x1,y1,x2,y2 = self.path_bounds
-        self.path_bounds = (min(x, x1), min(y, y1), max(x, x2), max(y, y2))
+        if not self.gpath.bounds:
+            self.gpath.bounds = (x,y,x,y)
+        x1,y1,x2,y2 = self.gpath.bounds
+        self.gpath.bounds = (min(x, x1), min(y, y1), max(x, x2), max(y, y2))
 
     @token('m', 'ff')
     def parse_move(self, x, y):
