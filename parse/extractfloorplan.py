@@ -17,6 +17,8 @@ class Floorplan2Svg(Pdf2Svg):
     scale = None
     north_angle = None
 
+    debug_angle = False
+
     def stack_matrix(self):
         matrix = mat(1,0,0,1,0,0)
         for element in reversed(self.stack):
@@ -89,13 +91,12 @@ class Floorplan2Svg(Pdf2Svg):
 
         north_bounds = [left+(0.7*width), top+(0.89*height), left+(0.76*width), top+height]
 
-        if logger.level <= logging.DEBUG:
+        if self.debug_angle:
             p = Path(stroke="blue", fill="none")
             p.M(north_bounds[0], -north_bounds[1])
             p.H(north_bounds[2])
             p.V(-north_bounds[3])
             p.H(north_bounds[0])
-            p.V(-north_bounds[1])
             p.Z()
             self.top.append(p)
 
@@ -184,7 +185,7 @@ def main():
         logger.info("page viewbox = %s", d.viewBox)
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
         parser.find_north()
-        if parser.north_angle:
+        if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
             cosA = np.cos(parser.north_angle)
             sinA = np.sin(parser.north_angle)
