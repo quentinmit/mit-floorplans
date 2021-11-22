@@ -24,17 +24,17 @@ class Floorplan2Svg(Pdf2Svg):
         #logger.debug("stack matrix = %s", matrix)
         return matrix
 
-    def gstate(self, _matrix=None, **kwargs):
-        if _matrix is not None:
-            new = np.dot(_matrix, self.stack_matrix())
-            logger.info("new gstate is at %s, height=%s", new[2], self.top.height)
-            if new[2][1] < -0.8*self.top.height:
-                g = Group()
-                g.matrix = _matrix
-                self.stack.append(g)
-                self.last = g
-                return
-        super().gstate(_matrix=_matrix, **kwargs)
+    # def gstate(self, _matrix=None, **kwargs):
+    #     if _matrix is not None:
+    #         new = np.dot(_matrix, self.stack_matrix())
+    #         logger.info("new gstate is at %s, height=%s", new[2], self.top.height)
+    #         if new[2][1] < -0.8*self.top.height:
+    #             g = Group()
+    #             g.matrix = _matrix
+    #             self.stack.append(g)
+    #             self.last = g
+    #             return
+    #     super().gstate(_matrix=_matrix, **kwargs)
 
     @token('Tj', 't')
     def parse_text_out(self, text):
