@@ -33,6 +33,29 @@ def mat(a,b,c,d,e,f):
 IDENTITY = np.identity(3)
 
 
+def transformed_points(points, matrix):
+    points = np.array(points).reshape((-1, 2))
+    points = np.hstack((points, np.ones(points.shape[:-1] + (1,))))
+    # matrix of (x,y,1) rows
+    # apply transformation first because it can change x and y
+    points = np.dot(points, matrix)
+    return points
+
+
+def transformed_bounds(points, matrix):
+    if (matrix == IDENTITY).all():
+        minx = min(x for x, _ in points)
+        miny = min(y for _, y in points)
+        maxx = max(x for x, _ in points)
+        maxy = max(y for _, y in points)
+        return (minx,miny,maxx,maxy)
+    points = transformed_points(points, matrix)
+    minx,miny,_ = np.min(points, axis=0)
+    maxx,maxy,_ = np.max(points, axis=0)
+    #logger.debug("bounds of %s = %s", self, (minx,miny,maxx,maxy))
+    return (minx,miny,maxx,maxy)
+
+
 class TransformMixin:
     _matrix = IDENTITY
 
@@ -62,21 +85,7 @@ class TransformMixin:
         return 'matrix(%f,%f,%f,%f,%f,%f)' % tuple(self.matrix[:,:2].flatten())
 
     def transformed_bounds(self, points):
-        if (self.matrix == IDENTITY).all():
-            minx = min(x for x, _ in points)
-            miny = min(y for _, y in points)
-            maxx = max(x for x, _ in points)
-            maxy = max(y for _, y in points)
-            return (minx,miny,maxx,maxy)
-        points = np.array(points).reshape((-1, 2))
-        points = np.hstack((points, np.ones(points.shape[:-1] + (1,))))
-        # matrix of (x,y,1) rows
-        # apply transformation first because it can change x and y
-        points = np.dot(points, self.matrix)
-        minx,miny,_ = np.min(points, axis=0)
-        maxx,maxy,_ = np.max(points, axis=0)
-        #logger.debug("bounds of %s = %s", self, (minx,miny,maxx,maxy))
-        return (minx,miny,maxx,maxy)
+        return transformed_bounds(points, self.matrix)
 
 
 class Group(TransformMixin, draw.Group):
@@ -399,7 +408,7 @@ class Pdf2Svg(BaseParser):
                 a1 = {k:v for k,v in self.gpath.args.items() if k != 'd'}
                 a2 = {k:v for k,v in self.last.args.items() if k != 'd'}
                 if a1 == a2 and len(self.last.args['d']) < 1024 and self.gpath.args['d'][0] == 'M':
-                    logging.info('extending %s', self.last)
+                    #logger.debug('extending %s', self.last)
                     self.last.args['d'] += ' ' + self.gpath.args['d']
                     return
             self.add(self.gpath)
