@@ -12,6 +12,18 @@ from pdf2svg import Pdf2Svg, Group, Path, token, mat, transformed_bounds, transf
 
 logger = logging.getLogger('extractfloorplan')
 
+KNOWN_SHAPES = {
+    "L-1,-4L-3,-5L-6,-7L-10,-7L-13,-5L-14,-4L-16,0L-16,14L15,14L15,0L14,-4L12,-5L9,-7L6,-7L3,-5L2,-4L0,0L0,14": "B",
+    "L31,0L31,-10L29,-15L26,-18L23,-19L19,-21L11,-21L7,-19L4,-18L1,-15L0,-10L0,0": "D",
+    "L32,0L0,-12L32,-24L0,-24": "M",
+    "L32,0L0,-11L32,-23L0,-23": "M",
+    "L31,0L0,-12L31,-24L0,-24": "M",
+    "L31,0L31,-13L29,-18L28,-19L25,-21L20,-21L17,-19L16,-18L14,-13L14,0": "P",
+    "L0,-16L-12,-8L-12,-12L-14,-15L-15,-16L-20,-18L-23,-18L-27,-16L-30,-13L-32,-9L-32,-5L-30,0L-29,1L-26,3": "3",
+    "L3,1L4,6L4,9L3,13L-2,16L-9,17L-16,17L-22,16L-25,13L-27,9L-27,7L-25,3L-22,0L-18,-2L-16,-2L-12,0L-9,3L-8,7L-8,9L-9,13L-12,16L-16,17": "6",
+    "L-2,4L-5,6L-8,6L-11,4L-12,1L-14,-5L-15,-9L-18,-12L-21,-14L-26,-14L-29,-12L-30,-11L-32,-6L-32,0L-30,4L-29,6L-26,7L-21,7L-18,6L-15,3L-14,-2L-12,-8L-11,-11L-8,-12L-5,-12L-2,-11L0,-6L0,0": "8",
+}
+
 class Floorplan2Svg(Pdf2Svg):
     bogus = False
     scale = None
@@ -130,6 +142,32 @@ class Floorplan2Svg(Pdf2Svg):
         if len(angles):
             self.north_angle = angles[1]
 
+    def find_characters(self):
+        def _shape(commands):
+            out = []
+            for cmd, args in commands:
+                out.append(cmd+",".join("%g" % x for x in args))
+            return "".join(out)
+        path_ids = dict()
+        path_ids.update(KNOWN_SHAPES)
+        paths_by_shape = dict()
+        def f(parent, child, matrix):
+            if not isinstance(child, Path):
+                return
+            bounds = transformed_bounds(child.bounds, matrix)
+            commands = tuple(child.offset_commands())[1:]
+            shape = _shape(commands)
+            paths_by_shape[shape] = paths_by_shape.get(shape, 0) + 1
+            logger.info("shape at %s: %s", bounds, shape)
+            if shape not in path_ids:
+                path_ids[shape] = len(path_ids)
+            if shape in KNOWN_SHAPES:
+                child.args['stroke'] = 'green'
+            child.args['title'] = "%s %s" % (path_ids[shape], shape)
+        self.apply(f)
+        for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
+            logger.info("%d copies of %s: %s", count, path_ids[shape], shape)
+
     def find_north_old(self, parent, matrix):
         matrix = np.dot(parent.matrix, matrix)
         for child in parent.children:
@@ -185,6 +223,7 @@ def main():
         logger.info("page viewbox = %s", d.viewBox)
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
         parser.find_north()
+        parser.find_characters()
         if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
             cosA = np.cos(parser.north_angle)

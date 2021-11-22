@@ -10,6 +10,7 @@ for most things, see the Form XObject-based method.
 
 '''
 
+import itertools
 import logging
 import sys
 import os
@@ -140,6 +141,25 @@ class Path(TransformMixin, draw.Path):
     @property
     def commands(self):
         return [(c[0], [float(x) for x in c[1:].split(',') if x != '']) for c in self.args['d'].split(' ')]
+
+    def offset_commands(self, offset=None):
+        commands = list(self.commands) # make a copy
+        if not commands:
+            return commands
+        if not offset:
+            if commands[0][0] != 'M':
+                raise ValueError("cannot determine offset for path; first command was %s", commands[0])
+            offset = commands[0][1]
+        x,y = offset
+        for i, (cmd, args) in enumerate(commands):
+            if cmd == 'H':
+                args = tuple(args[0]-x)
+            elif cmd == 'V':
+                args = tuple(args[0]-y)
+            elif cmd.isupper():
+                args = tuple(a-b for a,b in zip(args, itertools.cycle((x, y))))
+            commands[i] = (cmd, args)
+        return commands
 
 class Text(TransformMixin, draw.Text):
     @property
