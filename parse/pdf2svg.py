@@ -228,6 +228,14 @@ class Pdf2Svg(BaseParser):
                 # Replace group with individual children
                 self.stack[-1].children[i:i+1] = g.children
                 _matrix = np.dot(_matrix, g.matrix)
+            if isinstance(self.stack[-1], Group):
+                s1 = set(self.stack[-1].args.keys())
+                s2 = set(k.replace("_", "-") for k in kwargs.keys())
+                logger.debug("s1 = %s, s2 = %s", s1, s2)
+                if s1 == s2:
+                    # Assume all properties are overrides.
+                    # Not safe for CSS in general, but we never use relative values.
+                    self.stack.pop()
             g = Group()
             self.stack[-1].append(g)
             self.stack.append(g)

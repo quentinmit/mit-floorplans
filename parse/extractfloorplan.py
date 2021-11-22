@@ -119,8 +119,8 @@ def main():
         logger.info("page viewbox = %s", d.viewBox)
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
         parser.find_north(parser.stack[1], IDENTITY)
-        parser.remove_edge_content(parser.stack[1], IDENTITY)
         if parser.north_angle:
+            parser.remove_edge_content(parser.stack[1], IDENTITY)
             cosA = np.cos(parser.north_angle)
             sinA = np.sin(parser.north_angle)
             rotate_mat = mat(cosA,sinA, -sinA,cosA, 0,0)
