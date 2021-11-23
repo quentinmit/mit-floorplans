@@ -51,7 +51,7 @@ def commit_files_by_date(current_files=None):
             "\n".join("- %s (%s)" % (f[0], time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(f[1]))) for f in sorted(dates[date])),
         )
         commit_date = time.strftime("%s %z", time.localtime(commit_time))
-        print("Commit at %s: %s" % (commit_date, dates[date]))
+        logging.info("Commit at %s: %s", commit_date, dates[date])
         repo.index.commit(commit_message, author_date=commit_date, commit_date=commit_date)
 
 if args.git:
@@ -64,7 +64,8 @@ if args.verbose:
     br.set_debug_http(True)
     br.set_debug_responses(True)
     br.set_debug_redirects(True)
-
+else:
+    logging.basicConfig(level=logging.INFO)
 br.open(SEARCH_URL)
 
 br.select_form(name='IdPList')
@@ -88,7 +89,7 @@ def get_building_list(br):
     # item.name is the VALUE attribute
     return [item.name for item in br.find_control("Bldg").items]
 
-wget_args = 'wget -p -nH --cut-dirs=10'.split()
+wget_args = 'wget -nv -p -nH --cut-dirs=10'.split()
 
 for cookie in br.cookiejar:
     if cookie.name.startswith('_shibsession'):
