@@ -5,12 +5,15 @@ from __future__ import print_function
 import argparse
 import datetime
 import git
+import json
 import os
 import subprocess
 import time
 import mechanize
 import sys
 import logging
+
+import fetchrooms
 
 parser = argparse.ArgumentParser(description='Download floorplans.')
 parser.add_argument('--tc-username', type=str, required=True)
@@ -109,5 +112,11 @@ try:
 except subprocess.CalledProcessError as e:
     print("Some downloads failed: %s" % (e,))
 
+files = [os.path.basename(f) for f in pdf_urls]
+
+data = fetchrooms.fetch_data()
+json.dump(data, open('data.json', 'w'), indent=1)
+files.append('data.json')
+
 if args.git:
-    commit_files_by_date(os.path.basename(f) for f in pdf_urls)
+    commit_files_by_date(files)
