@@ -50,27 +50,22 @@ for shapes in [
         ("9", (-4,1,-7,4,-8,9,-8,10,-7,15,-4,18,0,19,2,19,6,18,9,15,11,10,11,9,9,4,6,1,0,0,-7,0,-14,1,-19,4,-20,9,-20,12,-19,16,-16,18)),
         ("/", (-48,27)),
         ("-", (0,-27)),
+
+        # W20_5 room number font
+        ("P", (1.92,0,1.92,-0.84,1.74,-1.2,1.56,-1.26,1.26,-1.26,1.08,-1.2,1.02,-1.08,0.9,-0.84,0.9,0)),
+        ("V", (-1.86,-0.66,0,-1.38)),
+        ("4", (-1.26,0.9,-1.26,-0.48), (-1.92,0)),
+        #("5", (0,0.9,-0.78,0.96,-0.72,0.9,-0.6,0.6,-0.6,0.36,-0.72,0.06,-0.9,-0.12,-1.14,-0.18,-1.32,-0.18,-1.62,-0.12,-1.8,0.06,-1.86,0.36,-1.86,0.6,-1.8,0.9,-1.68,0.96,-1.5,1.08)),
 ]:
     shapes = list(shapes)
     k = shapes.pop(0)
     v = shapes[0] # FIXME: Recognize multiple strokes
     l = len(v)//2
-    v = np.array(v).reshape((-1, 2))
+    v = np.array(v, dtype='f').reshape((-1, 2))
+    v /= np.min(v)-np.max(v)
     if l not in _KNOWN_SHAPES:
         _KNOWN_SHAPES[l] = list()
     _KNOWN_SHAPES[l].append((k, v))
-
-def ocr(points):
-    if points is None:
-        return None
-    points = np.array(points).reshape((-1, 2))
-    for char, char_points in _KNOWN_SHAPES.get(points.shape[0], []):
-        diff = char_points - points
-        n = np.linalg.norm(diff, axis=1)
-        if (n < 2).all():
-            return char
-        elif (n < 10).all():
-            logger.debug("%s at %s", char, n)
 
 class Floorplan2Svg(Pdf2Svg):
     bogus = False
@@ -190,6 +185,19 @@ class Floorplan2Svg(Pdf2Svg):
         if len(angles):
             self.north_angle = angles[1]
 
+    def _ocr(self, points):
+        if points is None:
+            return None
+        points = np.array(points, dtype='f').reshape((-1, 2))
+        points /= np.min(points)-np.max(points)
+        for char, char_points in _KNOWN_SHAPES.get(points.shape[0], []):
+            diff = char_points - points
+            n = np.linalg.norm(diff, axis=1)
+            if (n < 0.1).all():
+                return char
+            elif (n < 10).all():
+                logger.debug("%s at %s", char, n)
+
     def find_characters(self):
         def _shape(commands):
             points = []
@@ -214,7 +222,7 @@ class Floorplan2Svg(Pdf2Svg):
             paths_by_shape[shape_str] = paths_by_shape.get(shape_str, 0) + 1
             logger.info("shape at %s: %s", bounds, shape_str)
             if shape_str not in path_ids:
-                if char := ocr(_shape(commands)):
+                if char := self._ocr(_shape(commands)):
                     path_ids[shape_str] = char
                 else:
                     path_ids[shape_str] = len(path_ids)
