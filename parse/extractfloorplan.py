@@ -12,17 +12,65 @@ from pdf2svg import Pdf2Svg, Group, Path, token, mat, transformed_bounds, transf
 
 logger = logging.getLogger('extractfloorplan')
 
-KNOWN_SHAPES = {
-    "L-1,-4L-3,-5L-6,-7L-10,-7L-13,-5L-14,-4L-16,0L-16,14L15,14L15,0L14,-4L12,-5L9,-7L6,-7L3,-5L2,-4L0,0L0,14": "B",
-    "L31,0L31,-10L29,-15L26,-18L23,-19L19,-21L11,-21L7,-19L4,-18L1,-15L0,-10L0,0": "D",
-    "L32,0L0,-12L32,-24L0,-24": "M",
-    "L32,0L0,-11L32,-23L0,-23": "M",
-    "L31,0L0,-12L31,-24L0,-24": "M",
-    "L31,0L31,-13L29,-18L28,-19L25,-21L20,-21L17,-19L16,-18L14,-13L14,0": "P",
-    "L0,-16L-12,-8L-12,-12L-14,-15L-15,-16L-20,-18L-23,-18L-27,-16L-30,-13L-32,-9L-32,-5L-30,0L-29,1L-26,3": "3",
-    "L3,1L4,6L4,9L3,13L-2,16L-9,17L-16,17L-22,16L-25,13L-27,9L-27,7L-25,3L-22,0L-18,-2L-16,-2L-12,0L-9,3L-8,7L-8,9L-9,13L-12,16L-16,17": "6",
-    "L-2,4L-5,6L-8,6L-11,4L-12,1L-14,-5L-15,-9L-18,-12L-21,-14L-26,-14L-29,-12L-30,-11L-32,-6L-32,0L-30,4L-29,6L-26,7L-21,7L-18,6L-15,3L-14,-2L-12,-8L-11,-11L-8,-12L-5,-12L-2,-11L0,-6L0,0": "8",
-}
+_KNOWN_SHAPES = dict()
+
+for shapes in [
+        # 50_0 stair font
+        ("U", (-27,0,-32,-1,-36,-4,-37,-8,-37,-11,-36,-15,-32,-17,-27,-19,0,-19)),
+        ("P", (37,0,37,-12,35,-17,34,-18,30,-19,25,-19,21,-18,19,-17,18,-12,18,0)),
+        # 50_0 room number font
+        ("A", (31,-12,0,-24), (0,-15)),
+        ("B", (-1,-4,-3,-5,-6,-7,-10,-7,-13,-5,-14,-4,-16,0,-16,14,15,14,15,0,14,-4,12,-5,9,-7,6,-7,3,-5,2,-4,0,0,0,14)),
+        ("C", (3,2,6,5,7,8,7,14,6,17,3,20,0,21,-5,23,-12,23,-17,21,-19,20,-22,17,-24,14,-24,8,-22,5,-19,2,-17,0)),
+        ("D", (31,0,31,-10,29,-15,26,-18,23,-19,19,-21,11,-21,7,-19,4,-18,1,-15,0,-10,0,0)),
+        ("E", (32,0,32,-20), (0,-12), (0,-20)),
+        ("F", (31,0,31,-20), (0,-12)),
+        ("I", (-31,0)),
+        ("J", (-24,0,-28,2,-30,3,-31,6,-31,9,-30,12,-28,14,-24,15,-21,15)),
+        ("K", (-31,0), (-21,20), (-18,-13)),
+        ("L", (-32,0,-32,-18)),
+        ("M", (31,0,0,-12,31,-24,0,-24)),
+        ("N", (31,0,0,-21,31,-21)),
+        ("O", (-1,3,-4,6,-7,8,-11,9,-19,9,-23,8,-26,6,-29,3,-31,0,-31,-6,-29,-9,-26,-12,-23,-13,-19,-15,-11,-15,-7,-13,-4,-12,-1,-9,0,-6,0,0)),
+        ("P", (31,0,31,-13,29,-18,28,-19,25,-21,20,-21,17,-19,16,-18,14,-13,14,0)),
+        ("R", (31,0,31,-13,30,-18,28,-19,25,-21,22,-21,19,-19,18,-18,16,-13,16,0), (-16,-11)),
+        ("S", (3,3,5,8,5,14,3,18,0,21,-3,21,-6,20,-7,18,-9,15,-12,6,-13,3,-15,2,-18,0,-22,0,-25,3,-26,8,-26,14,-25,18,-22,21)),
+        ("T", (-32,0), (0,-21)),
+        ("U", (-22,0,-27,-2,-30,-5,-31,-9,-31,-12,-30,-17,-27,-20,-22,-21,0,-21)),
+        ("V", (-32,-12,0,-24)),
+        ("0", (-1,5,-6,8,-13,9,-17,9,-25,8,-29,5,-31,0,-31,-3,-29,-7,-25,-10,-17,-12,-13,-12,-6,-10,-1,-7,0,-3,0,0)),
+        ("1", (1,-3,6,-8,-26,-8)),
+        ("2", (1,0,4,-1,6,-3,7,-6,7,-12,6,-15,4,-16,1,-18,-2,-18,-5,-16,-9,-13,-24,1,-24,-19)),
+        ("3", (0,-16,-12,-8,-12,-12,-14,-15,-15,-16,-20,-18,-23,-18,-27,-16,-30,-13,-32,-9,-32,-5,-30,0,-29,1,-26,3)),
+        ("4", (31,0,11,15,11,-7)),
+        ("5", (0,15,-13,16,-12,15,-10,10,-10,6,-12,1,-15,-2,-19,-3,-22,-3,-26,-2,-29,1,-31,6,-31,10,-29,15,-28,16,-25,18)),
+        ("6", (3,1,4,6,4,9,3,13,-2,16,-9,17,-16,17,-22,16,-25,13,-27,9,-27,7,-25,3,-22,0,-18,-2,-16,-2,-12,0,-9,3,-8,7,-8,9,-9,13,-12,16,-16,17)),
+        ("7", (31,-15,31,6)),
+        ("8", (-2,4,-5,6,-8,6,-11,4,-12,1,-14,-5,-15,-9,-18,-12,-21,-14,-26,-14,-29,-12,-30,-11,-32,-6,-32,0,-30,4,-29,6,-26,7,-21,7,-18,6,-15,3,-14,-2,-12,-8,-11,-11,-8,-12,-5,-12,-2,-11,0,-6,0,0)),
+        ("9", (-4,1,-7,4,-8,9,-8,10,-7,15,-4,18,0,19,2,19,6,18,9,15,11,10,11,9,9,4,6,1,0,0,-7,0,-14,1,-19,4,-20,9,-20,12,-19,16,-16,18)),
+        ("/", (-48,27)),
+        ("-", (0,-27)),
+]:
+    shapes = list(shapes)
+    k = shapes.pop(0)
+    v = shapes[0] # FIXME: Recognize multiple strokes
+    l = len(v)//2
+    v = np.array(v).reshape((-1, 2))
+    if l not in _KNOWN_SHAPES:
+        _KNOWN_SHAPES[l] = list()
+    _KNOWN_SHAPES[l].append((k, v))
+
+def ocr(points):
+    if points is None:
+        return None
+    points = np.array(points).reshape((-1, 2))
+    for char, char_points in _KNOWN_SHAPES.get(points.shape[0], []):
+        diff = char_points - points
+        n = np.linalg.norm(diff, axis=1)
+        if (n < 2).all():
+            return char
+        elif (n < 10).all():
+            logger.debug("%s at %s", char, n)
 
 class Floorplan2Svg(Pdf2Svg):
     bogus = False
@@ -144,26 +192,39 @@ class Floorplan2Svg(Pdf2Svg):
 
     def find_characters(self):
         def _shape(commands):
+            points = []
+            for cmd, args in commands:
+                if cmd != 'L':
+                    return None
+                points.append(args)
+            return np.array(points)
+        def _shape_str(commands):
             out = []
             for cmd, args in commands:
                 out.append(cmd+",".join("%g" % x for x in args))
             return "".join(out)
         path_ids = dict()
-        path_ids.update(KNOWN_SHAPES)
         paths_by_shape = dict()
         def f(parent, child, matrix):
             if not isinstance(child, Path):
                 return
             bounds = transformed_bounds(child.bounds, matrix)
             commands = tuple(child.offset_commands())[1:]
-            shape = _shape(commands)
-            paths_by_shape[shape] = paths_by_shape.get(shape, 0) + 1
-            logger.info("shape at %s: %s", bounds, shape)
-            if shape not in path_ids:
-                path_ids[shape] = len(path_ids)
-            if shape in KNOWN_SHAPES:
+            shape_str = _shape_str(commands)
+            paths_by_shape[shape_str] = paths_by_shape.get(shape_str, 0) + 1
+            logger.info("shape at %s: %s", bounds, shape_str)
+            if shape_str not in path_ids:
+                if char := ocr(_shape(commands)):
+                    path_ids[shape_str] = char
+                else:
+                    path_ids[shape_str] = len(path_ids)
+            if isinstance(path_ids[shape_str], str) == 1:
                 child.args['stroke'] = 'green'
-            child.args['title'] = "%s %s" % (path_ids[shape], shape)
+            shape = _shape(commands)
+            shape_repr = shape_str
+            if shape is not None:
+                shape_repr = '(%s)' % (','.join("%g" % x for x in shape.flatten()))
+            child.args['title'] = "%s %s" % (path_ids[shape_str], shape_repr)
         self.apply(f)
         for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
             logger.info("%d copies of %s: %s", count, path_ids[shape], shape)
@@ -204,6 +265,7 @@ def main():
     pages = PdfReader(inpfn, decompress=True).pages
 
     parser = Floorplan2Svg()
+    #parser.debug_angle = True
 
     sys.setrecursionlimit(sys.getrecursionlimit()*2)
 

@@ -153,9 +153,9 @@ class Path(TransformMixin, draw.Path):
         x,y = offset
         for i, (cmd, args) in enumerate(commands):
             if cmd == 'H':
-                args = tuple(args[0]-x)
+                args = (args[0]-x,)
             elif cmd == 'V':
-                args = tuple(args[0]-y)
+                args = (args[0]-y,)
             elif cmd.isupper():
                 args = tuple(a-b for a,b in zip(args, itertools.cycle((x, y))))
             commands[i] = (cmd, args)
