@@ -150,6 +150,7 @@ class Path(TransformMixin, draw.Path):
             if commands[0][0] != 'M':
                 raise ValueError("cannot determine offset for path; first command was %s", commands[0])
             offset = commands[0][1]
+            commands = commands[1:]
         x,y = offset
         for i, (cmd, args) in enumerate(commands):
             if cmd == 'H':

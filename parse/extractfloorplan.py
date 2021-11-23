@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+import collections
 import logging
 import sys
 import os
 
+from more_itertools import peekable, take
 import numpy as np
 import drawSvg as draw
 from pdfrw import PdfReader, PdfWriter, PdfArray, PdfString
@@ -25,6 +27,7 @@ for shapes in [
         ("D", (31,0,31,-10,29,-15,26,-18,23,-19,19,-21,11,-21,7,-19,4,-18,1,-15,0,-10,0,0)),
         ("E", (32,0,32,-20), (0,-12), (0,-20)),
         ("F", (31,0,31,-20), (0,-12)),
+        ("G", (3,2,6,5,7,8,7,14,6,17,3,20,0,21,-5,23,-12,23,-17,21,-20,20,-23,17,-24,14,-24,8,-23,5,-20,2,-17,0,-12,0,-12,8)),
         ("I", (-31,0)),
         ("J", (-24,0,-28,2,-30,3,-31,6,-31,9,-30,12,-28,14,-24,15,-21,15)),
         ("K", (-31,0), (-21,20), (-18,-13)),
@@ -38,6 +41,9 @@ for shapes in [
         ("T", (-32,0), (0,-21)),
         ("U", (-22,0,-27,-2,-30,-5,-31,-9,-31,-12,-30,-17,-27,-20,-22,-21,0,-21)),
         ("V", (-32,-12,0,-24)),
+        ("V", (-75,-22,0,-43)),
+        ("W", (-75,-13,0,-27,-75,-40,0,-53)),
+        ("Y", (-36,-22,0,-43), (-39,0)),
         ("0", (-1,5,-6,8,-13,9,-17,9,-25,8,-29,5,-31,0,-31,-3,-29,-7,-25,-10,-17,-12,-13,-12,-6,-10,-1,-7,0,-3,0,0)),
         ("1", (1,-3,6,-8,-26,-8)),
         ("2", (1,0,4,-1,6,-3,7,-6,7,-12,6,-15,4,-16,1,-18,-2,-18,-5,-16,-9,-13,-24,1,-24,-19)),
@@ -50,6 +56,25 @@ for shapes in [
         ("9", (-4,1,-7,4,-8,9,-8,10,-7,15,-4,18,0,19,2,19,6,18,9,15,11,10,11,9,9,4,6,1,0,0,-7,0,-14,1,-19,4,-20,9,-20,12,-19,16,-16,18)),
         ("/", (-48,27)),
         ("-", (0,-27)),
+        # 50_0 footer
+        ("a", (-40,0), (6,6,9,12,9,20,6,26,0,32,-8,34,-14,34,-23,32,-28,26,-31,20,-31,12,-28,6,-23,0)),
+        ("c", (6,6,9,12,9,20,6,26,0,32,-8,35,-14,35,-23,32,-28,26,-31,20,-31,12,-28,6,-23,0)),
+        ("d", (-60,0), (6,5,9,11,9,20,6,25,0,31,-8,34,-14,34,-23,31,-28,25,-31,20,-31,11,-28,5,-23,0)),
+        ("e", (0,-34,5,-34,11,-31,14,-28,17,-23,17,-14,14,-8,8,-3,0,0,-6,0,-15,-3,-20,-8,-23,-14,-23,-23,-20,-28,-15,-34)),
+        ("f", (0,6,-3,12,-12,14,-60,14), (0,-20)),
+        ("g", (-46,0,-54,3,-57,6,-60,11,-60,20,-57,26), (6,6,9,11,9,20,6,26,0,31,-8,34,-14,34,-23,31,-28,26,-31,20,-31,11,-28,6,-23,0)),
+        ("h", (-60,0), (9,-8,12,-14,12,-23,9,-28,0,-31,-28,-31)),
+        ("i", (-3,-3,0,-6,3,-3,0,0), (-37,0)),
+        ("n", (-40,0), (9,-9,12,-14,12,-23,9,-29,0,-32,-28,-32)),
+        ("o", (-3,6,-9,12,-17,15,-23,15,-32,12,-37,6,-40,0,-40,-8,-37,-14,-32,-20,-23,-23,-17,-23,-9,-20,-3,-14,0,-8,0,0)),
+        ("p", (-60,0), (6,-5,9,-11,9,-20,6,-25,0,-31,-8,-34,-14,-34,-23,-31,-28,-25,-31,-20,-31,-11,-28,-5,-23,0)),
+        ("r", (-40,0), (8,-2,14,-8,17,-14,17,-22)),
+        ("s", (6,3,9,11,9,20,6,28,0,31,-5,28,-8,23,-11,8,-14,3,-20,0,-23,0,-28,3,-31,11,-31,20,-28,28,-23,31)),
+        ("t", (-49,0,-57,-3,-60,-9,-60,-14), (0,-20)),
+        ("u", (-29,0,-37,-3,-40,-8,-40,-17,-37,-23,-29,-31), (-40,0)),
+        ("v", (-40,-17,0,-34)),
+        ("y", (-40,-17,0,-34), (-12,5,-17,11,-20,17,-20,20)),
+        (".", (-3,3,-6,0,-3,-3,0,0)),
 
         # W20_5 room number font
         ("P", (1.92,0,1.92,-0.84,1.74,-1.2,1.56,-1.26,1.26,-1.26,1.08,-1.2,1.02,-1.08,0.9,-0.84,0.9,0)),
@@ -62,13 +87,16 @@ for shapes in [
 ]:
     shapes = list(shapes)
     k = shapes.pop(0)
-    v = shapes[0] # FIXME: Recognize multiple strokes
-    l = len(v)//2
-    v = np.array(v, dtype='f').reshape((-1, 2))
-    v /= np.min(v)-np.max(v)
+    l = len(shapes[0])//2
+    shapes = [np.array(v, dtype='f').reshape((-1, 2)) for v in shapes]
+    r = np.min(shapes[0])-np.max(shapes[0])
+    shapes = [s/r for s in shapes]
     if l not in _KNOWN_SHAPES:
         _KNOWN_SHAPES[l] = list()
-    _KNOWN_SHAPES[l].append((k, v))
+    _KNOWN_SHAPES[l].append((k, shapes))
+
+for shapes in _KNOWN_SHAPES.values():
+    shapes.sort(key=lambda t: len(t[1]), reverse=True)
 
 class Floorplan2Svg(Pdf2Svg):
     bogus = False
@@ -186,27 +214,68 @@ class Floorplan2Svg(Pdf2Svg):
         if len(angles):
             self.north_angle = angles[1]
 
-    def _ocr(self, points):
+    def _shape(self, commands):
+        points = []
+        for cmd, args in commands:
+            if cmd != 'L':
+                return None
+            points.append(args)
+        return np.array(points)
+
+    def _ocr(self, peekable):
+        """
+        Attempt to recognize a character in peekable, a peekable stream of _Shape.
+
+        Returns: character, number of elements required or None
+        """
+        first = peekable.peek()
+        points = first.points
         if points is None:
             return None
-        points = np.array(points, dtype='f').reshape((-1, 2))
-        points /= np.min(points)-np.max(points)
-        for char, char_points in _KNOWN_SHAPES.get(points.shape[0], []):
-            diff = char_points - points
-            n = np.linalg.norm(diff, axis=1)
-            if (n < 0.1).all():
-                return char
-            elif (n < 10).all():
-                logger.debug("%s at %s", char, n)
+        div = np.min(points)-np.max(points)
+        for char, char_shapes in _KNOWN_SHAPES.get(points.shape[0], []):
+            for i, char_points in enumerate(char_shapes):
+                try:
+                    shape = peekable[i]
+                except IndexError:
+                    break
+                if shape.parent != first.parent:
+                    break
+                if not self._same(char_points, shape.points/div):
+                    break
+            else:
+                return char, len(char_shapes)
+
+    def _same(self, a, b):
+        if a.shape != b.shape:
+            return False
+        diff = a - b
+        n = np.linalg.norm(diff, axis=1)
+        if (n < 0.1).all():
+            return True
+        elif (n < 10).all():
+            logger.debug("possible match %s", n)
+        return False
+
+    _Shape = collections.namedtuple('_Shape', 'parent child commands points bounds'.split())
 
     def find_characters(self):
-        def _shape(commands):
-            points = []
-            for cmd, args in commands:
-                if cmd != 'L':
-                    return None
-                points.append(args)
-            return np.array(points)
+        def _iterator():
+            for parent, child, matrix in self.iterelements():
+                if not isinstance(child, Path):
+                    continue
+                bounds = transformed_bounds(child.bounds, matrix)
+                commands = child.offset_commands()
+                points = []
+                for cmd, args in commands:
+                    if cmd != 'L':
+                        points = None
+                        break
+                    points.append(args)
+                else:
+                    points = np.array(points, dtype='f').reshape((-1, 2))
+                yield self._Shape(parent, child, commands, points, bounds)
+
         def _shape_str(commands):
             out = []
             for cmd, args in commands:
@@ -214,29 +283,35 @@ class Floorplan2Svg(Pdf2Svg):
             return "".join(out)
         path_ids = dict()
         paths_by_shape = dict()
-        for parent, child, matrix in self.iterelements():
-            if not isinstance(child, Path):
-                return
-            bounds = transformed_bounds(child.bounds, matrix)
-            commands = tuple(child.offset_commands())[1:]
-            shape_str = _shape_str(commands)
+
+        iterator = peekable(_iterator())
+        while iterator:
+            # Try to OCR the next N shapes
+            try:
+                char, elements = self._ocr(iterator)
+            except TypeError:
+                pass
+            else:
+                logger.info("shape at %s: %s (%d elements)", shape.bounds, char, elements)
+                paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
+                for i, shape in enumerate(take(elements, iterator)):
+                    shape.child.args['stroke'] = 'green'
+                    shape.child.args['title'] = char + '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
+                continue
+            # If not, catalog and move on
+            shape = next(iterator)
+            shape_str = _shape_str(shape.commands)
             paths_by_shape[shape_str] = paths_by_shape.get(shape_str, 0) + 1
-            logger.info("shape at %s: %s", bounds, shape_str)
+            logger.info("unknown shape at %s: %s", shape.bounds, shape_str)
             if shape_str not in path_ids:
-                if char := self._ocr(_shape(commands)):
-                    path_ids[shape_str] = char
-                else:
-                    path_ids[shape_str] = len(path_ids)
-            if isinstance(path_ids[shape_str], str) == 1:
-                child.args['stroke'] = 'green'
-            shape = _shape(commands)
+                path_ids[shape_str] = len(path_ids)
             shape_repr = shape_str
-            if shape is not None:
-                shape_repr = '(%s)' % (','.join("%g" % x for x in shape.flatten()))
-            child.args['title'] = "%s %s" % (path_ids[shape_str], shape_repr)
+            if shape.points is not None:
+                shape_repr = '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
+            shape.child.args['title'] = "%s %s" % (path_ids[shape_str], shape_repr)
 
         for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
-            logger.info("%d copies of %s: %s", count, path_ids[shape], shape)
+            logger.info("%d copies of %s: %s", count, path_ids.get(shape), shape)
 
     def find_north_old(self, parent, matrix):
         matrix = np.dot(parent.matrix, matrix)
