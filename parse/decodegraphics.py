@@ -40,6 +40,9 @@ class FontInfo(object):
         info = source.ToUnicode
         if not info:
             return
+        info = info.stream
+        if 'beginbfchar' not in info:
+            return
         info = info.stream.split('beginbfchar')[1].split('endbfchar')[0]
         info = list(PdfTokens(info))
         assert not len(info) & 1

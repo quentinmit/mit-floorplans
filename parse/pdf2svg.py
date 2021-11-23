@@ -30,6 +30,11 @@ logger = logging.getLogger('pdf2svg')
 def mat(a,b,c,d,e,f):
     return np.array([[a,b,0],[c,d,0],[e,f,1]])
 
+def rotate_mat(angle_radians):
+    cosA = np.cos(angle_radians)
+    sinA = np.sin(angle_radians)
+    return mat(cosA,sinA, -sinA,cosA, 0,0)
+
 
 IDENTITY = np.identity(3)
 
@@ -160,7 +165,7 @@ class Path(TransformMixin, draw.Path):
             elif cmd.isupper():
                 args = tuple(a-b for a,b in zip(args, itertools.cycle((x, y))))
             commands[i] = (cmd, args)
-        return commands
+        return tuple(commands)
 
 class Text(TransformMixin, draw.Text):
     @property
@@ -228,7 +233,7 @@ class Pdf2Svg(BaseParser):
     def add(self, element):
         self.stack[-1].append(element)
         self.last = element
-        logger.debug("added %s to %s", element, self.stack[-1])
+        #logger.debug("added %s to %s", element, self.stack[-1])
 
     def gstate(self, _matrix=None, **kwargs):
         if _matrix is not None:
@@ -550,7 +555,7 @@ class Pdf2Svg(BaseParser):
                 result.append(x.to_unicode())
             else:
                 # TODO: Adjust spacing between characters here
-                int(x)
+                float(x)
         text = ''.join(result)
         self.parse_text_out(text)
 

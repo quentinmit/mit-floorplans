@@ -10,7 +10,7 @@ import numpy as np
 import drawSvg as draw
 from pdfrw import PdfReader, PdfWriter, PdfArray, PdfString
 
-from pdf2svg import Pdf2Svg, Group, Path, token, mat, transformed_bounds, transformed_points, IDENTITY
+from pdf2svg import Pdf2Svg, Group, Path, token, mat, transformed_bounds, transformed_points, IDENTITY, rotate_mat
 from fonts import _KNOWN_SHAPES
 
 logger = logging.getLogger('extractfloorplan')
@@ -89,19 +89,28 @@ class Floorplan2Svg(Pdf2Svg):
             else:
                 yield parent, child, matrix
 
+    def debug_rect(self, bounds, text=None, rotated=False, stroke="black", fill="none", **kwargs):
+        p = Path(stroke=stroke, fill=fill, **kwargs)
+        if text:
+            p.args['title'] = text
+        p.M(bounds[0], -bounds[1])
+        p.H(bounds[2])
+        p.V(-bounds[3])
+        p.H(bounds[0])
+        p.Z()
+        if rotated:
+            self.stack[1].append(p)
+        else:
+            self.top.append(p)
+
+
     def find_north(self):
         left, top, width, height = self.top.viewBox
 
         north_bounds = [left+(0.7*width), top+(0.89*height), left+(0.76*width), top+height]
 
         if self.debug_angle:
-            p = Path(stroke="blue", fill="none")
-            p.M(north_bounds[0], -north_bounds[1])
-            p.H(north_bounds[2])
-            p.V(-north_bounds[3])
-            p.H(north_bounds[0])
-            p.Z()
-            self.top.append(p)
+            self.debug_rect(north_bounds, stroke="blue")
 
         logger.info("North expected within %s", north_bounds)
 
@@ -122,6 +131,8 @@ class Floorplan2Svg(Pdf2Svg):
                     line = transformed_points([c[1] for c in commands], matrix)[:,:2]
                     lines.append(line)
 
+        if not lines:
+            return
         lines = np.array(lines)
 
         vectors = lines[:,1,:]-lines[:,0,:]
@@ -130,6 +141,7 @@ class Floorplan2Svg(Pdf2Svg):
         logger.info("angles = %s", angles*180/np.pi)
         if len(angles):
             self.north_angle = angles[1]
+        # TODO: Figure out how to identify the bold rectangle pointing to north
 
     def _shape(self, commands):
         points = []
@@ -142,7 +154,10 @@ class Floorplan2Svg(Pdf2Svg):
                 points.append(args[4:6])
             else:
                 return None
-        return np.array(points, dtype='f').reshape((-1, 2))
+        a = np.array(points, dtype='f').reshape((-1, 2))
+        if (angle := int(self.page.Rotate or 0)) != 0:
+            a = transformed_points(a, rotate_mat(-angle/180*np.pi))[:,:2]
+        return a
 
     def _ocr(self, peekable):
         """
@@ -229,33 +244,6 @@ class Floorplan2Svg(Pdf2Svg):
         for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
             logger.info("%d copies of %s: %s", count, path_ids.get(shape), shape)
 
-    def find_north_old(self, parent, matrix):
-        matrix = np.dot(parent.matrix, matrix)
-        for child in parent.children:
-            if isinstance(child, Group):
-                self.find_north(child, matrix)
-            elif isinstance(child, Path):
-                bounds = transformed_bounds(child.bounds, matrix)
-                if bounds[1] > -0.2*self.top.height:
-                    commands = child.args['d'].split(' ')
-                    if not len(commands) == 4:
-                        continue
-                    if not (bounds[3]-bounds[1])/(bounds[2]-bounds[0]) < 1.1:
-                        continue
-                    args = [[float(x) for x in c[1:].split(',')] for c in commands]
-                    commands = [c[0] for c in commands]
-                    if commands != ['M', 'L', 'M', 'L']:
-                        continue
-                    points = transformed_points(args, matrix)[:,:2]
-                    logger.info("possible north: %s bounds %s", points, bounds)
-                    vectors = points[::2]-points[1::2]
-                    logger.info("lines = %s", vectors)
-                    angles = np.arctan2(vectors[:,1], vectors[:,0])
-                    logger.info("angles = %s", angles*180/np.pi)
-                    child.args["stroke"] = "red"
-                    # TODO: Figure out how to identify the bold rectangle indicating N
-                    self.north_angle = angles[1]+(np.pi)
-
 def main():
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger('decodegraphics').setLevel(logging.INFO)
@@ -272,6 +260,10 @@ def main():
     for page in pages:
         box = [float(x) for x in page.MediaBox]
         assert box[0] == box[1] == 0, "demo won't work on this PDF"
+        annots = page.Annots or []
+        for a in annots:
+            logger.info("annot at %s: %s", a.Rect, a.Contents.to_unicode())
+
         left, bottom, width, height = box
         rotate = 0
         if '/Rotate' in page:
@@ -286,12 +278,15 @@ def main():
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
         parser.find_north()
         parser.find_characters()
+        annot_mat = np.dot(rotate_mat(rotate/180*np.pi), mat(-1,0,0,1,width,0))
         if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
-            cosA = np.cos(parser.north_angle)
-            sinA = np.sin(parser.north_angle)
-            rotate_mat = mat(cosA,sinA, -sinA,cosA, 0,0)
-            parser.stack[1].matrix = np.dot(rotate_mat, parser.stack[1].matrix)
+            parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
+            annot_mat = np.dot(rotate_mat(parser.north_angle), annot_mat)
+        for a in annots:
+            rect = [float(x) for x in a.Rect]
+            rect = transformed_points(rect, annot_mat)[:,:2].flatten()
+            parser.debug_rect(rect, text=a.Contents.to_unicode(), stroke="orange")
         print(d.asSvg())
 
 if __name__ == '__main__':
