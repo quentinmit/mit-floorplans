@@ -216,6 +216,7 @@ class Floorplan2Svg(Pdf2Svg):
         paths_by_shape = dict()
 
         iterator = peekable(_iterator())
+        last_was_char = False
         while iterator:
             # Try to OCR the next N shapes
             try:
@@ -224,12 +225,15 @@ class Floorplan2Svg(Pdf2Svg):
                 pass
             else:
                 logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
-                paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
-                for i, shape in enumerate(take(elements, iterator)):
-                    shape.child.args['stroke'] = 'green'
-                    shape.child.args['title'] = char + '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
-                continue
+                if char not in ('T', 'L', 'I', '-', '/') or last_was_char: # easy for walls to look like these characters
+                    paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
+                    for i, shape in enumerate(take(elements, iterator)):
+                        shape.child.args['stroke'] = 'green'
+                        shape.child.args['title'] = char + '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
+                    last_was_char = True
+                    continue
             # If not, catalog and move on
+            last_was_char = False
             shape = next(iterator)
             shape_str = _shape_str(shape.commands)
             paths_by_shape[shape_str] = paths_by_shape.get(shape_str, 0) + 1
