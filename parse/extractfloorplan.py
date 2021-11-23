@@ -191,7 +191,7 @@ class Floorplan2Svg(Pdf2Svg):
         lines = []
         for parent, child, matrix in self.iterelements():
             if not isinstance(child, Path):
-                return
+                continue
             try:
                 bounds = transformed_bounds(child.bounds, matrix)
             except:
@@ -349,7 +349,7 @@ def main():
     pages = PdfReader(inpfn, decompress=True).pages
 
     parser = Floorplan2Svg()
-    #parser.debug_angle = True
+    parser.debug_angle = True
 
     sys.setrecursionlimit(sys.getrecursionlimit()*2)
 
