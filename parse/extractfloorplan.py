@@ -131,7 +131,7 @@ class Floorplan2Svg(Pdf2Svg):
                 if bounds[3] > -0.2*self.top.height:
                     parent.children.remove(child)
 
-    def apply(self, predicate, parent=None, matrix=IDENTITY):
+    def iterelements(self, parent=None, matrix=IDENTITY):
         if parent:
             matrix = np.dot(parent.matrix, matrix)
             children = parent.children
@@ -140,9 +140,9 @@ class Floorplan2Svg(Pdf2Svg):
             children = parent.elements
         for child in children:
             if isinstance(child, Group):
-                self.apply(predicate, child, matrix)
+                yield from self.iterelements(child, matrix)
             else:
-                predicate(parent, child, matrix)
+                yield parent, child, matrix
 
     def find_north(self):
         left, top, width, height = self.top.viewBox
@@ -161,7 +161,7 @@ class Floorplan2Svg(Pdf2Svg):
         logger.info("North expected within %s", north_bounds)
 
         lines = []
-        def f(parent, child, matrix):
+        for parent, child, matrix in self.iterelements():
             if not isinstance(child, Path):
                 return
             try:
@@ -176,8 +176,6 @@ class Floorplan2Svg(Pdf2Svg):
                     child.args["stroke"] = "blue"
                     line = transformed_points([c[1] for c in commands], matrix)[:,:2]
                     lines.append(line)
-
-        self.apply(f)
 
         lines = np.array(lines)
 
@@ -216,7 +214,7 @@ class Floorplan2Svg(Pdf2Svg):
             return "".join(out)
         path_ids = dict()
         paths_by_shape = dict()
-        def f(parent, child, matrix):
+        for parent, child, matrix in self.iterelements():
             if not isinstance(child, Path):
                 return
             bounds = transformed_bounds(child.bounds, matrix)
@@ -236,7 +234,7 @@ class Floorplan2Svg(Pdf2Svg):
             if shape is not None:
                 shape_repr = '(%s)' % (','.join("%g" % x for x in shape.flatten()))
             child.args['title'] = "%s %s" % (path_ids[shape_str], shape_repr)
-        self.apply(f)
+
         for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
             logger.info("%d copies of %s: %s", count, path_ids[shape], shape)
 
