@@ -146,7 +146,7 @@ class Floorplan2Svg(Pdf2Svg):
     def _shape(self, commands):
         points = []
         for cmd, args in commands:
-            if cmd == 'L':
+            if cmd in ('M', 'L'):
                 points.append(args)
             elif cmd in ('Z', 'z'):
                 points.append((0, 0))
@@ -188,7 +188,7 @@ class Floorplan2Svg(Pdf2Svg):
             return False
         diff = a - b
         n = np.linalg.norm(diff, axis=1)
-        if (n < 0.2).all():
+        if (n < 0.3).all():
             return True
         elif (n < 10).all():
             pass
@@ -223,7 +223,7 @@ class Floorplan2Svg(Pdf2Svg):
             except TypeError:
                 pass
             else:
-                logger.info("shape at %s: %s (%d elements)", shape.bounds, char, elements)
+                logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
                 paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
                 for i, shape in enumerate(take(elements, iterator)):
                     shape.child.args['stroke'] = 'green'
