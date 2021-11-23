@@ -229,6 +229,7 @@ class Floorplan2Svg(Pdf2Svg):
                     paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
                     for i, shape in enumerate(take(elements, iterator)):
                         shape.child.args['stroke'] = 'green'
+                        shape.child.args['class'] = 'vectortext'
                         shape.child.args['title'] = char + '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
                     last_was_char = True
                     continue
