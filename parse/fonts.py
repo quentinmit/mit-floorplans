@@ -1,5 +1,7 @@
 import numpy as np
 
+CHAR_POINTS = 32
+
 _KNOWN_SHAPES = dict()
 
 for shapes in [

@@ -10,14 +10,17 @@ for most things, see the Form XObject-based method.
 
 '''
 
+import functools
 import itertools
 import logging
 import sys
 import os
+from typing import GenericAlias
 
 import numpy as np
 import drawSvg as draw
 from pdfrw import PdfReader, PdfWriter, PdfArray, PdfString
+import bezier
 #import reportlab.pdfgen.canvas
 #from reportlab.pdfgen.canvas import Canvas
 
@@ -115,8 +118,38 @@ class Group(TransformMixin, draw.Group):
             out += ' transform(%s)' % (self.transform)
         return out
 
+class path_property:
+    def __init__(self, func):
+        self.func = func
+        self.attrname = None
+        self.__doc__ = func.__doc__
+
+    def __set_name__(self, owner, name):
+        self.attrname = name
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        cache = instance.__dict__
+        (d, val) = cache.get(self.attrname, (None, None))
+        if val is None or instance.args["d"] != d:
+            val = self.func(instance)
+            cache[self.attrname] = (instance.args["d"], val)
+        return val
+
+    def __set__(self, instance, value):
+        raise AttributeError()
+
+    __class_getitem__ = classmethod(GenericAlias)
+
+
+class Curve(bezier.Curve):
+    def __repr__(self):
+        return 'Curve.from_nodes(%s)' % (self.nodes,)
+
+
 class Path(TransformMixin, draw.Path):
-    @property
+    @path_property
     def bounds(self):
         points = []
         for command in self.args['d'].split(' '):
@@ -143,7 +176,7 @@ class Path(TransformMixin, draw.Path):
             return None
         return self.transformed_bounds(np.array(points))
 
-    @property
+    @path_property
     def commands(self):
         return [(c[0], [float(x) for x in c[1:].split(',') if x != '']) for c in self.args['d'].split(' ')]
 
@@ -166,6 +199,56 @@ class Path(TransformMixin, draw.Path):
                 args = tuple(a-b for a,b in zip(args, itertools.cycle((x, y))))
             commands[i] = (cmd, args)
         return tuple(commands)
+
+    @path_property
+    def curves(self):
+        commands = self.offset_commands()
+        curves = []
+        initial = last = (0., 0.)
+        def _add(*points):
+            curves.append(Curve.from_nodes(np.array(points).T))
+        for (cmd, args) in commands:
+            if cmd == 'M':
+                initial = last = args
+            elif cmd == 'L':
+                _add(last, last := args)
+            elif cmd == 'H':
+                _add(last, last := (args[0], last[1]))
+            elif cmd == 'V':
+                _add(last, last := (last[0], args[0]))
+            elif cmd == 'C':
+                while args:
+                    _add(last, args[0:2], args[2:4], last := args[4:6])
+                    args = args[6:]
+            elif cmd in ('Z', 'z'):
+                _add(last, last := initial)
+        return curves
+
+    @path_property
+    def length(self):
+        return sum(c.length for c in self.curves)
+
+    def quantize(self, points=32):
+        lengths = np.array([0] + [c.length for c in self.curves])
+        total_length = np.sum(lengths)
+        if total_length == 0:
+            return np.zeros(points)
+        offsets = np.interp(
+            np.linspace(0, total_length, points),
+            np.cumsum(lengths),
+            np.arange(lengths.size),
+        )
+        splits = np.unique(offsets.astype(int), return_index=True)[1][1:-1]
+        #logger.debug("quantizing path with curves of length: %s", lengths)
+        #logger.debug("calculated offsets: %s", offsets)
+        #logger.debug("split points: %s", splits)
+        points = []
+        for offsets in np.split(offsets, splits):
+            i = int(offsets[0])
+            curve = self.curves[i]
+            points.append(curve.evaluate_multi(offsets-i).T)
+        return np.vstack(points)
+
 
 class Text(TransformMixin, draw.Text):
     @property

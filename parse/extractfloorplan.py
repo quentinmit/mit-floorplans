@@ -11,7 +11,7 @@ import drawSvg as draw
 from pdfrw import PdfReader, PdfWriter, PdfArray, PdfString
 
 from pdf2svg import Pdf2Svg, Group, Path, token, mat, transformed_bounds, transformed_points, IDENTITY, rotate_mat
-from fonts import _KNOWN_SHAPES
+from fonts import _KNOWN_SHAPES, CHAR_POINTS
 
 logger = logging.getLogger('extractfloorplan')
 
@@ -143,18 +143,8 @@ class Floorplan2Svg(Pdf2Svg):
             self.north_angle = angles[1]
         # TODO: Figure out how to identify the bold rectangle pointing to north
 
-    def _shape(self, commands):
-        points = []
-        for cmd, args in commands:
-            if cmd in ('M', 'L'):
-                points.append(args)
-            elif cmd in ('Z', 'z'):
-                points.append((0, 0))
-            elif cmd == 'C':
-                points.append(args[4:6])
-            else:
-                return None
-        a = np.array(points, dtype='f').reshape((-1, 2))
+    def _shape(self, path):
+        a = path.quantize(CHAR_POINTS)
         if (angle := int(self.page.Rotate or 0)) != 0:
             a = transformed_points(a, rotate_mat(-angle/180*np.pi))[:,:2]
         return a
@@ -204,7 +194,7 @@ class Floorplan2Svg(Pdf2Svg):
                     continue
                 bounds = transformed_bounds(child.bounds, matrix)
                 commands = child.offset_commands()
-                points = self._shape(commands)
+                points = self._shape(child)
                 yield self._Shape(parent, child, commands, points, bounds)
 
         def _shape_str(commands):
@@ -238,9 +228,13 @@ class Floorplan2Svg(Pdf2Svg):
             shape = next(iterator)
             shape_str = _shape_str(shape.commands)
             paths_by_shape[shape_str] = paths_by_shape.get(shape_str, 0) + 1
-            logger.info("unknown shape at %s: %s", shape.bounds, shape_str)
             if shape_str not in path_ids:
                 path_ids[shape_str] = len(path_ids)
+            logger.info("unknown shape at %s: %s", shape.bounds, shape_str)
+            logger.debug("path id %s", path_ids[shape_str])
+            logger.debug("commands %s", shape.commands)
+            logger.debug("curves %r", shape.child.curves)
+            #logger.debug("quantized %r", shape.child.quantize())
             shape_repr = shape_str
             if shape.points is not None:
                 shape_repr = '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
