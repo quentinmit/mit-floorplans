@@ -4,7 +4,7 @@ import collections
 import logging
 import sys
 import os
-from itertools import chain
+from itertools import chain, count
 
 from more_itertools import peekable, take, ichunked
 import numpy as np
@@ -85,10 +85,9 @@ class Floorplan2Svg(Pdf2Svg):
             parent = self.top
             children = parent.elements
         for child in list(children): # snapshot in case list is mutated mid-iteration
+            yield parent, child, matrix
             if isinstance(child, Group):
                 yield from self.iterelements(child, matrix)
-            else:
-                yield parent, child, matrix
 
     def debug_rect(self, bounds, text=None, parent=None, stroke="black", fill="none", **kwargs):
         p = Path(stroke=stroke, fill=fill, **kwargs)
@@ -242,6 +241,7 @@ class Floorplan2Svg(Pdf2Svg):
     def _mark_character(self, char, shapes):
         parent = shapes[0].parent
         g = Group(class_="vectorchar", stroke='green', title=char)
+        g.vectorchar = char
         parent.children.insert(parent.children.index(shapes[0].child), g)
         for shape in shapes:
             shape.parent.children.remove(shape.child)
@@ -306,6 +306,77 @@ class Floorplan2Svg(Pdf2Svg):
         for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
             logger.info("%d copies of %s: %s", count, path_ids.get(shape), shape)
 
+    def _mark_text(self, text, chars):
+        # FIXME: Some of these might be real
+        if len(chars) <= 1:
+            return
+        parent = chars[0].parent
+        g = Group(class_="vectortext", stroke='blue', title=text)
+        g.vectortext = text
+        parent.children.insert(parent.children.index(chars[0].child), g)
+        for char in chars:
+            char.parent.children.remove(char.child)
+            g.children.append(char.child)
+            del char.child.args['stroke']
+
+    _Char = collections.namedtuple('_Char', 'parent child bounds'.split())
+
+    def find_text(self):
+        def _iterator():
+            for parent, child, matrix in self.iterelements():
+                if not isinstance(child, Group) or 'vectorchar' not in child.args.get('class', ''):
+                    continue
+                bounds = transformed_bounds(child.bounds, matrix)
+                yield self._Char(parent, child, bounds)
+
+        iterator = peekable(_iterator())
+        while iterator:
+            first = next(iterator)
+            chars = [first]
+            line_bounds = char_bounds = first.bounds
+            char_height = char_bounds[3]-char_bounds[1]
+            char_width = max(char_bounds[2]-char_bounds[0], .8*char_height)
+            char_height = max(char_height, char_width)
+            line_width = char_width
+            text = first.child.vectorchar
+            while iterator:
+                char = iterator.peek()
+                # _Char.bounds is in SVG space, so positive y is down
+
+                # Compute the distance from the right edge of previous
+                # character to the left edge of this character, as a fraction
+                # of the previous character's width.
+                # Compute the distance from the top edge of previous character
+                # to the top edge of this character, as a fraction of the
+                # previous character's height.
+                char_width = max(char_width, char_bounds[2]-char_bounds[0])
+                char_height = max(char_height, char_bounds[3]-char_bounds[1])
+                line_width = max(line_width, line_bounds[2]-line_bounds[0])
+                char_distance_x = (char.bounds[0] - char_bounds[2]) / char_width
+                char_distance_y = (char.bounds[3] - char_bounds[3]) / char_height
+                # Ditto but with x/y swapped
+                line_distance_x = (char.bounds[0] - line_bounds[0]) / line_width
+                line_distance_y = (char.bounds[1] - line_bounds[3]) / char_height #(line_bounds[3]-line_bounds[1])
+
+                if 0 < char_distance_x < 2 and -.5 < char_distance_y < .5:
+                    if char_distance_x > 1:
+                        text += ' '
+                    line_bounds = (min(line_bounds[0], char.bounds[0]), min(line_bounds[1], char.bounds[1]), max(line_bounds[2], char.bounds[2]), max(line_bounds[3], char.bounds[3]))
+                elif -.5 < line_distance_x < .5 and 0 < line_distance_y < 1:
+                    text += '\n'
+                    line_bounds = char.bounds
+                else:
+                    #logger.debug('considered %s, char dist = (%g,%g) line dist = (%g,%g)', char, char_distance_x, char_distance_y, line_distance_x, line_distance_y)
+                    #logger.debug('previous bounds were char %s line %s', char_bounds, line_bounds)
+                    break
+
+                chars.append(next(iterator))
+                text += char.child.vectorchar
+                char_bounds = char.bounds
+
+            logger.info('vector text "%s" found at %s: %s', text, first.bounds[:2], chars)
+            self._mark_text(text, chars)
+
 def main():
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger('decodegraphics').setLevel(logging.INFO)
@@ -342,6 +413,7 @@ def main():
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
         parser.find_north()
         parser.find_characters()
+        parser.find_text()
         annot_mat = np.dot(rotate_mat(rotate/180*np.pi), mat(-1,0,0,1,width,0))
         if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
