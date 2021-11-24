@@ -15,6 +15,7 @@ import itertools
 import logging
 import sys
 import os
+import re
 from typing import GenericAlias
 
 import numpy as np
@@ -145,7 +146,9 @@ class path_property:
 
 class Curve(bezier.Curve):
     def __repr__(self):
-        return 'Curve.from_nodes(%s)' % (self.nodes,)
+        return 'Curve.from_nodes(%r.T)' % (self.nodes.T.tolist(),)
+
+_PATH_SPLIT_RE = re.compile(r"(?<!^) *(?=[a-zA-Z])")
 
 
 class Path(TransformMixin, draw.Path):
@@ -178,12 +181,16 @@ class Path(TransformMixin, draw.Path):
 
     @path_property
     def commands(self):
-        return [(c[0], [float(x) for x in c[1:].split(',') if x != '']) for c in self.args['d'].split(' ')]
+        try:
+            return [(c[0], [float(x) for x in c[1:].split(',') if x != '']) for c in _PATH_SPLIT_RE.split(self.args['d']) if c]
+        except IndexError:
+            logger.exception("parsing path %s", self.args["d"])
+            raise
 
     def offset_commands(self, offset=None):
         commands = list(self.commands) # make a copy
         if not commands:
-            return commands
+            return (offset or (0,0)), commands
         if not offset:
             if commands[0][0] != 'M':
                 raise ValueError("cannot determine offset for path; first command was %s", commands[0])
@@ -198,11 +205,11 @@ class Path(TransformMixin, draw.Path):
             elif cmd.isupper():
                 args = tuple(a-b for a,b in zip(args, itertools.cycle((x, y))))
             commands[i] = (cmd, args)
-        return tuple(commands)
+        return offset, tuple(commands)
 
     @path_property
     def curves(self):
-        commands = self.offset_commands()
+        _, commands = self.offset_commands()
         curves = []
         initial = last = (0., 0.)
         def _add(*points):

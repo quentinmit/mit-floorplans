@@ -4,14 +4,15 @@ import collections
 import logging
 import sys
 import os
+from itertools import chain
 
-from more_itertools import peekable, take
+from more_itertools import peekable, take, ichunked
 import numpy as np
 import drawSvg as draw
 from pdfrw import PdfReader, PdfWriter, PdfArray, PdfString
 
 from pdf2svg import Pdf2Svg, Group, Path, token, mat, transformed_bounds, transformed_points, IDENTITY, rotate_mat
-from fonts import _KNOWN_SHAPES, CHAR_POINTS
+from fonts import KNOWN_SHAPES, CHAR_POINTS
 
 logger = logging.getLogger('extractfloorplan')
 
@@ -160,7 +161,7 @@ class Floorplan2Svg(Pdf2Svg):
         if points is None:
             return None
         div = np.min(points)-np.max(points)
-        for char, char_shapes in _KNOWN_SHAPES.get(points.shape[0], []):
+        for char, char_shapes in KNOWN_SHAPES:
             for i, char_points in enumerate(char_shapes):
                 try:
                     shape = peekable[i]
@@ -185,7 +186,7 @@ class Floorplan2Svg(Pdf2Svg):
             #logger.debug("possible match %s", n)
         return False
 
-    _Shape = collections.namedtuple('_Shape', 'parent child commands points bounds'.split())
+    _Shape = collections.namedtuple('_Shape', 'parent child offset commands points bounds'.split())
 
     def find_characters(self):
         def _iterator():
@@ -193,13 +194,27 @@ class Floorplan2Svg(Pdf2Svg):
                 if not isinstance(child, Path):
                     continue
                 bounds = transformed_bounds(child.bounds, matrix)
-                commands = child.offset_commands()
+                offset, commands = child.offset_commands()
                 points = self._shape(child)
-                yield self._Shape(parent, child, commands, points, bounds)
+                yield self._Shape(parent, child, offset, commands, points, bounds)
 
         def _shape_str(commands):
             out = []
             for cmd, args in commands:
+                try:
+                    if int(self.page.Rotate or 0) == 270:
+                        if cmd == 'H':
+                            cmd = 'V'
+                        elif cmd == 'V':
+                            cmd = 'H'
+                            args = (-args[0],)
+                        else:
+                            args = chain.from_iterable((-y if y else 0, x) for x,y in ichunked(args, 2))
+                    elif self.page.Rotate:
+                        raise NotImplementedError()
+                except:
+                    logger.exception("failed to update %s, %s", cmd, args)
+                    raise
                 out.append(cmd+",".join("%g" % x for x in args))
             return "".join(out)
         path_ids = dict()
@@ -207,6 +222,7 @@ class Floorplan2Svg(Pdf2Svg):
 
         iterator = peekable(_iterator())
         last_was_char = False
+        last_offset = None
         while iterator:
             # Try to OCR the next N shapes
             try:
@@ -218,6 +234,8 @@ class Floorplan2Svg(Pdf2Svg):
                 if char not in ('T', 'L', 'I', '-', '/') or last_was_char: # easy for walls to look like these characters
                     paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
                     for i, shape in enumerate(take(elements, iterator)):
+                        if i == 0:
+                            last_offset = shape.offset
                         shape.child.args['stroke'] = 'green'
                         shape.child.args['class'] = 'vectortext'
                         shape.child.args['title'] = char + '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
@@ -234,11 +252,15 @@ class Floorplan2Svg(Pdf2Svg):
             logger.debug("path id %s", path_ids[shape_str])
             logger.debug("commands %s", shape.commands)
             logger.debug("curves %r", shape.child.curves)
-            #logger.debug("quantized %r", shape.child.quantize())
+            if path_ids[shape_str] == 1002:
+                logger.debug("quantized %r", shape.child.quantize())
             shape_repr = shape_str
+            if last_offset:
+                shape_repr += ' or %s' % _shape_str(shape.child.offset_commands(last_offset)[1])
             if shape.points is not None:
-                shape_repr = '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
+                shape_repr += ' (%s)' % (','.join("%g" % x for x in shape.points.flatten()))
             shape.child.args['title'] = "%s %s" % (path_ids[shape_str], shape_repr)
+            last_offset = shape.offset
 
         for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
             logger.info("%d copies of %s: %s", count, path_ids.get(shape), shape)
@@ -246,6 +268,8 @@ class Floorplan2Svg(Pdf2Svg):
 def main():
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger('decodegraphics').setLevel(logging.INFO)
+
+    logging.debug("known shapes = %s", KNOWN_SHAPES)
 
     inpfn, = sys.argv[1:]
     outfn = 'copy.' + os.path.basename(inpfn)

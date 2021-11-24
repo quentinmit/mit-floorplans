@@ -1,8 +1,31 @@
+import logging
 import numpy as np
+from pdf2svg import Path
 
 CHAR_POINTS = 32
+KNOWN_SHAPES = list()
 
-_KNOWN_SHAPES = dict()
+_SAMPLE_CHARS = r"""
+# 50_0 room number font
+M L0,32L11,0L23,32L23,0
+#multipart not working yet
+E L0,31L19,31 M0,16L12,16 M0,0L19,0
+P L0,32L14,32L18,30L20,29L21,26L21,21L20,18L18,17L14,15L0,15
+"""
+for line in _SAMPLE_CHARS.splitlines():
+    line = line.split('#')[0].strip()
+    if not line:
+        continue
+    line = line.split(' ')
+    #logging.warning("known char %s", line)
+    k = line.pop(0)
+    paths = [Path(d='M0,0'+d) for d in line]
+    shapes = [path.quantize(CHAR_POINTS) for path in paths]
+    r = np.min(shapes[0])-np.max(shapes[0])
+    shapes = [s/r for s in shapes]
+    KNOWN_SHAPES.append((k, shapes))
+
+KNOWN_SHAPES.sort(key=lambda t: len(t[1]), reverse=True)
 
 for shapes in [
         # 50_0 stair font
@@ -261,15 +284,16 @@ for shapes in [
         # ("B", (3.78,0,3.78,-1.62,3.6,-2.16,3.42,-2.34,3.06,-2.52,2.7,-2.52,2.34,-2.34,2.16,-2.16,1.98,-1.62,1.98,0), (-0.18,-0.54,-0.36,-0.72,-0.72,-0.9,-1.26,-0.9,-1.62,-0.72,-1.8,-0.54,-1.98,0,-1.98,1.62)),
         # ("Y", (-2.1,-1.74,0,-3.48), (-2.4,0)),
     #]:
-    shapes = list(shapes)
-    k = shapes.pop(0)
-    l = len(shapes[0])//2
-    shapes = [np.array(v, dtype='f').reshape((-1, 2)) for v in shapes]
-    r = np.min(shapes[0])-np.max(shapes[0])
-    shapes = [s/r for s in shapes]
-    if l not in _KNOWN_SHAPES:
-        _KNOWN_SHAPES[l] = list()
-    _KNOWN_SHAPES[l].append((k, shapes))
+    pass
+#     shapes = list(shapes)
+#     k = shapes.pop(0)
+#     l = len(shapes[0])//2
+#     shapes = [np.array(v, dtype='f').reshape((-1, 2)) for v in shapes]
+#     r = np.min(shapes[0])-np.max(shapes[0])
+#     shapes = [s/r for s in shapes]
+#     if l not in _KNOWN_SHAPES:
+#         _KNOWN_SHAPES[l] = list()
+#     _KNOWN_SHAPES[l].append((k, shapes))
 
-for shapes in _KNOWN_SHAPES.values():
-    shapes.sort(key=lambda t: len(t[1]), reverse=True)
+# for shapes in _KNOWN_SHAPES.values():
+#     shapes.sort(key=lambda t: len(t[1]), reverse=True)
