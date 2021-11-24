@@ -11,7 +11,7 @@ import numpy as np
 import drawSvg as draw
 from pdfrw import PdfReader, PdfWriter, PdfArray, PdfString
 
-from pdf2svg import Pdf2Svg, Group, Path, token, mat, transformed_bounds, transformed_points, IDENTITY, rotate_mat
+from pdf2svg import Pdf2Svg, Group, Path, Text, token, mat, transformed_bounds, transformed_points, IDENTITY, rotate_mat
 from fonts import KNOWN_SHAPES, CHAR_POINTS
 
 logger = logging.getLogger('extractfloorplan')
@@ -319,7 +319,7 @@ class Floorplan2Svg(Pdf2Svg):
             g.children.append(char.child)
             del char.child.args['stroke']
 
-    _Char = collections.namedtuple('_Char', 'parent child bounds'.split())
+    _Element = collections.namedtuple('_Element', 'parent child bounds'.split())
 
     def find_text(self):
         def _iterator():
@@ -327,7 +327,7 @@ class Floorplan2Svg(Pdf2Svg):
                 if not isinstance(child, Group) or 'vectorchar' not in child.args.get('class', ''):
                     continue
                 bounds = transformed_bounds(child.bounds, matrix)
-                yield self._Char(parent, child, bounds)
+                yield self._Element(parent, child, bounds)
 
         iterator = peekable(_iterator())
         while iterator:
@@ -377,6 +377,32 @@ class Floorplan2Svg(Pdf2Svg):
             logger.info('vector text "%s" found at %s: %s', text, first.bounds[:2], chars)
             self._mark_text(text, chars)
 
+    def reify_text(self):
+        def _iterator():
+            for parent, child, matrix in self.iterelements():
+                if not isinstance(child, Group) or 'vectortext' not in child.args.get('class', ''):
+                    continue
+                bounds = transformed_bounds(child.bounds, matrix)
+                yield self._Element(parent, child, bounds)
+
+        g = Group(
+            class_="text",
+#            text_align='center',
+#            text_anchor='middle',
+        )
+        self.top.append(g)
+
+        for element in _iterator():
+            center = np.mean(np.array(element.bounds).reshape((-1,2)), axis=0)
+            g.append(Text(
+                text=element.child.vectortext,
+                fontSize='12pt',
+                x=center[0],
+                y=-center[1],
+                center=True,
+                valign='middle',
+            ))
+
 def main():
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger('decodegraphics').setLevel(logging.INFO)
@@ -419,6 +445,7 @@ def main():
             parser.remove_edge_content(parser.stack[1], IDENTITY)
             parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
             annot_mat = np.dot(rotate_mat(parser.north_angle), annot_mat)
+        parser.reify_text()
         if annots:
             annotg = Group(class_="annotations")
             d.append(annotg)
