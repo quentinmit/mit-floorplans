@@ -172,8 +172,8 @@ class Floorplan2Svg(Pdf2Svg):
                         shape = peekable[i]
                     except IndexError:
                         break
-                    if shape.parent != first.parent:
-                        break
+                    #if shape.parent != first.parent:
+                    #    break
                     norms.append(self._same(char_points, (shape.points+shape.offset-first.offset)/div))
                 else:
                     norm = np.concatenate(norms)
