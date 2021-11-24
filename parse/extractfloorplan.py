@@ -257,7 +257,7 @@ class Floorplan2Svg(Pdf2Svg):
             if result:
                 char, elements = result
                 logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
-                if char not in ('T', 'L', 'I', '-', '/', 'O', '0', 'V') or last_was_char: # easy for walls to look like these characters
+                if char not in ('T', 'L', 'I', '-', '/', 'O', 'V', 'U') or last_was_char: # easy for walls to look like these characters
                     paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
                     for i, shape in enumerate(take(elements, iterator)):
                         if i == 0:
