@@ -125,12 +125,12 @@ class Floorplan2Svg(Pdf2Svg):
                 logger.exception("bounds = %s, matrix = %s", child.bounds, matrix)
                 raise
             if bounds[0] > north_bounds[0] and bounds[1] > north_bounds[1] and bounds[2] < north_bounds[2] and bounds[3] < north_bounds[3]:
-                commands = child.commands
-                if len(commands) == 2 and [c[0] for c in commands] == ['M', 'L']:
-                    logger.info("possible north: %s bounds %s", child, bounds)
-                    child.args["stroke"] = "blue"
-                    line = transformed_points([c[1] for c in commands], matrix)[:,:2]
-                    lines.append(line)
+                if len(child.commands) % 2 == 0 and all([c[0] for c in commands] == ['M', 'L'] for commands in ichunked(child.commands, 2)):
+                    for commands in ichunked(child.commands, 2):
+                        logger.info("possible north: %s bounds %s", child, bounds)
+                        child.args["stroke"] = "blue"
+                        line = transformed_points([c[1] for c in commands], matrix)[:,:2]
+                        lines.append(line)
 
         if not lines:
             return
