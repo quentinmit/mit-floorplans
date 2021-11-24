@@ -90,7 +90,7 @@ class Floorplan2Svg(Pdf2Svg):
             else:
                 yield parent, child, matrix
 
-    def debug_rect(self, bounds, text=None, rotated=False, stroke="black", fill="none", **kwargs):
+    def debug_rect(self, bounds, text=None, parent=None, stroke="black", fill="none", **kwargs):
         p = Path(stroke=stroke, fill=fill, **kwargs)
         if text:
             p.args['title'] = text
@@ -99,8 +99,8 @@ class Floorplan2Svg(Pdf2Svg):
         p.V(-bounds[3])
         p.H(bounds[0])
         p.Z()
-        if rotated:
-            self.stack[1].append(p)
+        if parent:
+            parent.append(p)
         else:
             self.top.append(p)
 
@@ -264,7 +264,7 @@ class Floorplan2Svg(Pdf2Svg):
                             last_offset = shape.child.offset
                         shape.child.args['stroke'] = 'green'
                         shape.child.args['class'] = 'vectortext'
-                        shape.child.args['title'] = char + '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
+                        shape.child.args['title'] = char + ' %s (%s)' % (_shape_str(shape.commands), ','.join("%g" % x for x in shape.points.flatten()))
                     last_was_char = True
                     continue
             # If not, catalog and move on
@@ -336,10 +336,13 @@ def main():
             parser.remove_edge_content(parser.stack[1], IDENTITY)
             parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
             annot_mat = np.dot(rotate_mat(parser.north_angle), annot_mat)
+        if annots:
+            annotg = Group(class_="annotations")
+            d.append(annotg)
         for a in annots:
             rect = [float(x) for x in a.Rect]
             rect = transformed_points(rect, annot_mat)[:,:2].flatten()
-            parser.debug_rect(rect, text=a.Contents.to_unicode(), stroke="orange")
+            parser.debug_rect(rect, text=a.Contents.to_unicode(), parent=annotg, stroke="orange")
         print(d.asSvg())
 
 if __name__ == '__main__':
