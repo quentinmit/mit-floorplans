@@ -187,6 +187,13 @@ class Path(TransformMixin, draw.Path):
             logger.exception("parsing path %s", self.args["d"])
             raise
 
+    @path_property
+    def offset(self):
+        if self.commands[0][0] != 'M':
+            return (0,0)
+        else:
+            return self.commands[0][1]
+
     def offset_commands(self, offset=None):
         commands = list(self.commands) # make a copy
         if not commands:
@@ -288,6 +295,11 @@ class Pdf2Svg(BaseParser):
 
         if page.Rotate and int(page.Rotate) == 270:
             self.gstate(_matrix=mat(0,-1,1,0,self.top.width,0))
+        # PDF coordinate system is (0,0) at bottom left with positive y going up the screen
+        # SVG coordinate system is (0,0) at top left with positive y going down the screen
+        # So, apply a transformation matrix to flip the y axis
+        # Setting the viewBox accordingly is the responsibility of the caller.
+        # FIXME: Why do we not need to shift by the height of the page to fix (0,0)?
         self.gstate(_matrix=mat(1,0,0,-1,0,0))
         super().parsepage(page)
     #############################################################################

@@ -1,4 +1,3 @@
-import logging
 import numpy as np
 from pdf2svg import Path
 
@@ -6,23 +5,36 @@ CHAR_POINTS = 32
 KNOWN_SHAPES = list()
 
 _SAMPLE_CHARS = r"""
+# N.B. path coordinates are in PDF coordinates, so positive Y is pointing up.
+
 # 50_0 room number font
+A L12,31L24,0 M4,10L19,10
+B L4,-1L5,-3L7,-6L7,-10L5,-13L4,-14L0,-16L-14,-16L-14,15L0,15L4,14L5,12L7,9L7,6L5,3L4,2L0,0L-14,0
+D L0,31L11,31L15,29L18,26L20,23L21,19L21,11L20,7L18,4L15,1L11,0L0,0
+I L0,-31
 M L0,32L11,0L23,32L23,0
-#multipart not working yet
+#O L-3,-1L-6,-4L-7,-7L-9,-11L-9,-19L-7,-23L-6,-26L-3,-29L0,-31L6,-31L9,-29L12,-26L14,-23L15,-19L15,-11L14,-7L12,-4L9,-1L6,0L0,0
 E L0,31L19,31 M0,16L12,16 M0,0L19,0
 P L0,32L14,32L18,30L20,29L21,26L21,21L20,18L18,17L14,15L0,15
+S L-3,3L-8,5L-14,5L-18,3L-21,0L-21,-3L-20,-6L-18,-7L-15,-9L-6,-12L-3,-13L-2,-15L0,-18L0,-22L-3,-25L-8,-26L-14,-26L-18,-25L-21,-22
+
+3 L17,0L8,-12L12,-12L15,-14L17,-15L18,-19L18,-22L17,-27L14,-30L9,-31L5,-31L0,-30L-1,-28L-3,-25
+8 L-4,-1L-6,-4L-6,-7L-4,-10L-1,-12L5,-13L9,-15L12,-18L14,-21L14,-25L12,-28L11,-29L6,-31L0,-31L-4,-29L-6,-28L-7,-25L-7,-21L-6,-18L-3,-15L2,-13L8,-12L11,-10L12,-7L12,-4L11,-1L6,0L0,0
+9 L-1,-4L-4,-7L-9,-8L-10,-8L-15,-7L-18,-4L-19,0L-19,2L-18,6L-15,9L-10,11L-9,11L-4,9L-1,6L0,0L0,-7L-1,-14L-4,-19L-9,-20L-12,-20L-16,-19L-18,-16
 """
 for line in _SAMPLE_CHARS.splitlines():
     line = line.split('#')[0].strip()
     if not line:
         continue
     line = line.split(' ')
-    #logging.warning("known char %s", line)
     k = line.pop(0)
+
     paths = [Path(d='M0,0'+d) for d in line]
     shapes = [path.quantize(CHAR_POINTS) for path in paths]
-    r = np.min(shapes[0])-np.max(shapes[0])
+
+    r = np.max(shapes[0])-np.min(shapes[0])
     shapes = [s/r for s in shapes]
+
     KNOWN_SHAPES.append((k, shapes))
 
 KNOWN_SHAPES.sort(key=lambda t: len(t[1]), reverse=True)

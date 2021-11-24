@@ -160,7 +160,7 @@ class Floorplan2Svg(Pdf2Svg):
         points = first.points
         if points is None:
             return None
-        div = np.min(points)-np.max(points)
+        div = np.max(points)-np.min(points)
         for char, char_shapes in KNOWN_SHAPES:
             for i, char_points in enumerate(char_shapes):
                 try:
@@ -169,7 +169,7 @@ class Floorplan2Svg(Pdf2Svg):
                     break
                 if shape.parent != first.parent:
                     break
-                if not self._same(char_points, shape.points/div):
+                if not self._same(char_points, (shape.points+shape.offset-first.offset)/div):
                     break
             else:
                 return char, len(char_shapes)
@@ -188,6 +188,17 @@ class Floorplan2Svg(Pdf2Svg):
 
     _Shape = collections.namedtuple('_Shape', 'parent child offset commands points bounds'.split())
 
+    def _rotate_point(self, x, y):
+        rotate = int(self.page.Rotate or 0)
+        if rotate == 90:
+            return -x, y
+        elif rotate == 180:
+            return -x, -y
+        elif rotate == 270:
+            return (-y if y else 0, x)
+        else:
+            return x, y
+
     def find_characters(self):
         def _iterator():
             for parent, child, matrix in self.iterelements():
@@ -195,6 +206,7 @@ class Floorplan2Svg(Pdf2Svg):
                     continue
                 bounds = transformed_bounds(child.bounds, matrix)
                 offset, commands = child.offset_commands()
+                offset = self._rotate_point(*offset)
                 points = self._shape(child)
                 yield self._Shape(parent, child, offset, commands, points, bounds)
 
@@ -235,7 +247,7 @@ class Floorplan2Svg(Pdf2Svg):
                     paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
                     for i, shape in enumerate(take(elements, iterator)):
                         if i == 0:
-                            last_offset = shape.offset
+                            last_offset = shape.child.offset
                         shape.child.args['stroke'] = 'green'
                         shape.child.args['class'] = 'vectortext'
                         shape.child.args['title'] = char + '(%s)' % (','.join("%g" % x for x in shape.points.flatten()))
@@ -248,19 +260,23 @@ class Floorplan2Svg(Pdf2Svg):
             paths_by_shape[shape_str] = paths_by_shape.get(shape_str, 0) + 1
             if shape_str not in path_ids:
                 path_ids[shape_str] = len(path_ids)
-            logger.info("unknown shape at %s: %s", shape.bounds, shape_str)
-            logger.debug("path id %s", path_ids[shape_str])
-            logger.debug("commands %s", shape.commands)
-            logger.debug("curves %r", shape.child.curves)
-            if path_ids[shape_str] == 1002:
-                logger.debug("quantized %r", shape.child.quantize())
+            logger.info("unknown shape %s at %s: %s", path_ids[shape_str], shape.bounds, shape_str)
+            if path_ids[shape_str] in (236,):
+                logger.debug("commands %s", shape.child.commands)
+                logger.debug("offset commands %s", shape.commands)
+                logger.debug("curves %r", shape.child.curves)
+                logger.debug("offset %s", shape.child.offset)
+                logger.debug("last offset %s", last_offset)
+                logger.debug("rotated offset %s", shape.offset)
+                #logger.debug("quantized %r", shape.child.quantize())
+                logger.debug("points %r", shape.points)
             shape_repr = shape_str
             if last_offset:
                 shape_repr += ' or %s' % _shape_str(shape.child.offset_commands(last_offset)[1])
             if shape.points is not None:
                 shape_repr += ' (%s)' % (','.join("%g" % x for x in shape.points.flatten()))
             shape.child.args['title'] = "%s %s" % (path_ids[shape_str], shape_repr)
-            last_offset = shape.offset
+            last_offset = shape.child.offset
 
         for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
             logger.info("%d copies of %s: %s", count, path_ids.get(shape), shape)
