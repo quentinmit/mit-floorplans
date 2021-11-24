@@ -84,7 +84,7 @@ class Floorplan2Svg(Pdf2Svg):
         else:
             parent = self.top
             children = parent.elements
-        for child in children:
+        for child in list(children): # snapshot in case list is mutated mid-iteration
             if isinstance(child, Group):
                 yield from self.iterelements(child, matrix)
             else:
@@ -219,6 +219,36 @@ class Floorplan2Svg(Pdf2Svg):
         else:
             return x, y
 
+    def _shape_str(self, commands):
+        out = []
+        for cmd, args in commands:
+            try:
+                if int(self.page.Rotate or 0) == 270:
+                    if cmd == 'H':
+                        cmd = 'V'
+                    elif cmd == 'V':
+                        cmd = 'H'
+                        args = (-args[0],)
+                    else:
+                        args = chain.from_iterable((-y if y else 0, x) for x,y in ichunked(args, 2))
+                elif self.page.Rotate:
+                    raise NotImplementedError()
+            except:
+                logger.exception("failed to update %s, %s", cmd, args)
+                raise
+            out.append(cmd+",".join("%g" % x for x in args))
+        return "".join(out)
+
+    def _mark_character(self, char, shapes):
+        parent = shapes[0].parent
+        g = Group(class_="vectorchar", stroke='green', title=char)
+        parent.children.insert(parent.children.index(shapes[0].child), g)
+        for shape in shapes:
+            shape.parent.children.remove(shape.child)
+            g.children.append(shape.child)
+            shape.child.args['class'] = 'vectorchar'
+            shape.child.args['title'] = char + ' %s (%s)' % (self._shape_str(shape.commands), ','.join("%g" % x for x in shape.points.flatten()))
+
     def find_characters(self):
         def _iterator():
             for parent, child, matrix in self.iterelements():
@@ -229,26 +259,6 @@ class Floorplan2Svg(Pdf2Svg):
                 offset = self._rotate_point(*offset)
                 points = self._shape(child)
                 yield self._Shape(parent, child, offset, commands, points, bounds)
-
-        def _shape_str(commands):
-            out = []
-            for cmd, args in commands:
-                try:
-                    if int(self.page.Rotate or 0) == 270:
-                        if cmd == 'H':
-                            cmd = 'V'
-                        elif cmd == 'V':
-                            cmd = 'H'
-                            args = (-args[0],)
-                        else:
-                            args = chain.from_iterable((-y if y else 0, x) for x,y in ichunked(args, 2))
-                    elif self.page.Rotate:
-                        raise NotImplementedError()
-                except:
-                    logger.exception("failed to update %s, %s", cmd, args)
-                    raise
-                out.append(cmd+",".join("%g" % x for x in args))
-            return "".join(out)
         path_ids = dict()
         paths_by_shape = dict()
 
@@ -263,18 +273,15 @@ class Floorplan2Svg(Pdf2Svg):
                 logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
                 if char not in ('T', 'L', 'I', '-', '/', 'O', 'V', 'U') or last_was_char: # easy for walls to look like these characters
                     paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
-                    for i, shape in enumerate(take(elements, iterator)):
-                        if i == 0:
-                            last_offset = shape.child.offset
-                        shape.child.args['stroke'] = 'green'
-                        shape.child.args['class'] = 'vectortext'
-                        shape.child.args['title'] = char + ' %s (%s)' % (_shape_str(shape.commands), ','.join("%g" % x for x in shape.points.flatten()))
+                    shapes = list(take(elements, iterator))
+                    self._mark_character(char, shapes)
+                    last_offset = shapes[0].child.offset
                     last_was_char = True
                     continue
             # If not, catalog and move on
             last_was_char = False
             shape = next(iterator)
-            shape_str = _shape_str(shape.commands)
+            shape_str = self._shape_str(shape.commands)
             paths_by_shape[shape_str] = paths_by_shape.get(shape_str, 0) + 1
             if shape_str not in path_ids:
                 path_ids[shape_str] = len(path_ids)
@@ -290,7 +297,7 @@ class Floorplan2Svg(Pdf2Svg):
                 logger.debug("points %r", shape.points)
             shape_repr = shape_str
             if last_offset:
-                shape_repr += ' or %s' % _shape_str(shape.child.offset_commands(last_offset)[1])
+                shape_repr += ' or %s' % self._shape_str(shape.child.offset_commands(last_offset)[1])
             if shape.points is not None:
                 shape_repr += ' (%s)' % (','.join("%g" % x for x in shape.points.flatten()))
             shape.child.args['title'] = "%s %s" % (path_ids[shape_str], shape_repr)
