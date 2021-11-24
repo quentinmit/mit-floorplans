@@ -161,30 +161,46 @@ class Floorplan2Svg(Pdf2Svg):
         if points is None:
             return None
         div = np.max(points)-np.min(points)
+
+        last_len = None
+        possibilities = []
         for char, char_shapes in KNOWN_SHAPES:
-            for i, char_points in enumerate(char_shapes):
-                try:
-                    shape = peekable[i]
-                except IndexError:
-                    break
-                if shape.parent != first.parent:
-                    break
-                if not self._same(char_points, (shape.points+shape.offset-first.offset)/div):
-                    break
-            else:
-                return char, len(char_shapes)
+            norms = []
+            try:
+                for i, char_points in enumerate(char_shapes):
+                    try:
+                        shape = peekable[i]
+                    except IndexError:
+                        break
+                    if shape.parent != first.parent:
+                        break
+                    norms.append(self._same(char_points, (shape.points+shape.offset-first.offset)/div))
+                else:
+                    norm = np.concatenate(norms)
+                    if (norm < 0.1).all():
+                        score = np.max(norm)
+                        possibilities.append((score, char, len(char_shapes)))
+            except:
+                logger.exception("attempting to match %s %s\nnorms %s", char, char_shapes, norms)
+                raise
+
+            if len(char_shapes) != last_len and possibilities:
+                # Return the most-similar shape from the category with the highest number of strokes
+                return next(iter(sorted(possibilities)))[1:]
+            last_len = len(char_shapes)
+
+        if possibilities:
+            if len(possibilities) > 1:
+                logger.info("multiple possibilities found for %s", [peekable[i].child for i in range(len(char_shapes))])
+                for (score, char, l) in sorted(possibilities):
+                    logger.info("possible %s with score %s", char, score)
+            return next(iter(sorted(possibilities)))[1:]
 
     def _same(self, a, b):
         if a.shape != b.shape:
-            return False
+            raise ValueError("unexpected shapes: %s and %s" % (a.shape, b.shape))
         diff = a - b
-        n = np.linalg.norm(diff, axis=1)
-        if (n < 0.3).all():
-            return True
-        elif (n < 10).all():
-            pass
-            #logger.debug("possible match %s", n)
-        return False
+        return np.linalg.norm(diff, axis=1)
 
     _Shape = collections.namedtuple('_Shape', 'parent child offset commands points bounds'.split())
 
@@ -237,11 +253,9 @@ class Floorplan2Svg(Pdf2Svg):
         last_offset = None
         while iterator:
             # Try to OCR the next N shapes
-            try:
-                char, elements = self._ocr(iterator)
-            except TypeError:
-                pass
-            else:
+            result = self._ocr(iterator)
+            if result:
+                char, elements = result
                 logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
                 if char not in ('T', 'L', 'I', '-', '/') or last_was_char: # easy for walls to look like these characters
                     paths_by_shape[char] = paths_by_shape.get(char, 0) + 1

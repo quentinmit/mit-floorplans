@@ -246,14 +246,14 @@ class Path(TransformMixin, draw.Path):
         lengths = np.array([0] + [c.length for c in self.curves])
         total_length = np.sum(lengths)
         if total_length == 0:
-            return np.zeros(points)
+            return np.zeros((points, 2))
         offsets = np.interp(
             np.linspace(0, total_length, points),
             np.cumsum(lengths),
             np.arange(lengths.size),
         )
         splits = np.unique(offsets.astype(int), return_index=True)[1][1:-1]
-        #logger.debug("quantizing path with curves of length: %s", lengths)
+        #logger.debug("quantizing %s with curves of length %s", self, lengths)
         #logger.debug("calculated offsets: %s", offsets)
         #logger.debug("split points: %s", splits)
         points = []
@@ -262,6 +262,9 @@ class Path(TransformMixin, draw.Path):
             curve = self.curves[i]
             points.append(curve.evaluate_multi(offsets-i).T)
         return np.vstack(points)
+
+    def __repr__(self):
+        return 'Path(d="%s")' % (self.args['d'])
 
 
 class Text(TransformMixin, draw.Text):
