@@ -165,6 +165,9 @@ class Floorplan2Svg(Pdf2Svg):
         last_len = None
         possibilities = []
         for char, char_shapes in KNOWN_SHAPES:
+            if char in ('(', ')', 'J') and len(first.commands) <= 2:
+                # These shapes are too similar to everything else
+                continue
             norms = []
             try:
                 for i, char_points in enumerate(char_shapes):
@@ -177,8 +180,9 @@ class Floorplan2Svg(Pdf2Svg):
                     norms.append(self._same(char_points, (shape.points+shape.offset-first.offset)/div))
                 else:
                     norm = np.concatenate(norms)
-                    if (norm < 0.3).all():
-                        score = np.max(norm)
+                    score = np.mean(norm**2)
+                    if score < 0.03:
+                        #score = np.max(norm)
                         possibilities.append((score, char, len(char_shapes)))
             except:
                 logger.exception("attempting to match %s %s\nnorms %s", char, char_shapes, norms)
