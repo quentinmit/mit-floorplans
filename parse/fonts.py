@@ -86,6 +86,7 @@ y L1.02,-2.4L2.04,0 M1.02,-2.4L0.66,-3.06L0.36,-3.42L0,-3.6L-0.18,-3.6
 
 # W20_0 stair font
 U L0,-1.62L0.06,-1.98L0.24,-2.16L0.48,-2.28L0.6,-2.28L0.84,-2.16L1.02,-1.98L1.08,-1.62L1.08,0
+\x23 L-0.3,-1.5 M0.24,0L-0.06,-1.5 M-0.3,-0.6L0.3,-0.6 M-0.3,-0.9L0.24,-0.9
 
 # W20_0 room number font
 B L0,1.86L0.78,1.86L1.08,1.8L1.14,1.68L1.26,1.5L1.26,1.32L1.14,1.14L1.08,1.08L0.78,0.96L0,0.96 M0.78,0.96L1.08,0.9L1.14,0.78L1.26,0.6L1.26,0.36L1.14,0.18L1.08,0.06L0.78,0L0,0
@@ -119,7 +120,7 @@ for line in _SAMPLE_CHARS.splitlines():
     if not line:
         continue
     line = line.split(' ')
-    k = line.pop(0)
+    k = line.pop(0).encode('ascii', 'backslashreplace').decode('unicode-escape')
 
     paths = [Path(d='M0,0'+d) for d in line]
     shapes = [path.quantize(CHAR_POINTS) for path in paths]

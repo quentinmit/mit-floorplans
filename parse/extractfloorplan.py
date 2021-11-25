@@ -340,6 +340,9 @@ class Floorplan2Svg(Pdf2Svg):
             char_height = max(char_height, char_width)
             line_width = char_width
             text = first.child.vectorchar
+            if text in ('-', 'l', '/'):
+                # These characters are not allowed to start a new text block.
+                continue
             while iterator:
                 char = iterator.peek()
                 # _Char.bounds is in SVG space, so positive y is down
@@ -363,7 +366,7 @@ class Floorplan2Svg(Pdf2Svg):
                     if char_distance_x > 1:
                         text += ' '
                     line_bounds = (min(line_bounds[0], char.bounds[0]), min(line_bounds[1], char.bounds[1]), max(line_bounds[2], char.bounds[2]), max(line_bounds[3], char.bounds[3]))
-                elif -.5 < line_distance_x < .5 and 0 < line_distance_y < 1:
+                elif -1 < line_distance_x < .5 and 0 < line_distance_y < 1:
                     text += '\n'
                     line_bounds = char.bounds
                 else:
