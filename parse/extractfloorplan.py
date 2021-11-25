@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import collections
 import logging
 import sys
@@ -238,7 +239,7 @@ class Floorplan2Svg(Pdf2Svg):
             out.append(cmd+",".join("%g" % x for x in args))
         return "".join(out)
 
-    def _mark_character(self, char, shapes):
+    def _mark_character(self, char, shapes, last_offset):
         parent = shapes[0].parent
         g = Group(class_="vectorchar", stroke='green', title=char)
         g.vectorchar = char
@@ -247,7 +248,7 @@ class Floorplan2Svg(Pdf2Svg):
             shape.parent.children.remove(shape.child)
             g.children.append(shape.child)
             shape.child.args['class'] = 'vectorchar'
-            shape.child.args['title'] = char + ' %s (%s)' % (self._shape_str(shape.commands), ','.join("%g" % x for x in shape.points.flatten()))
+            shape.child.args['title'] = char + ' %s or %s (%s)' % (self._shape_str(shape.commands), self._shape_str(shape.child.offset_commands(last_offset)[1]), ','.join("%g" % x for x in shape.points.flatten()))
 
     def find_characters(self):
         def _iterator():
@@ -271,10 +272,10 @@ class Floorplan2Svg(Pdf2Svg):
             if result:
                 char, elements = result
                 logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
-                if char not in ('T', 'L', 'I', '-', '/', 'O', 'V', 'U') or last_was_char: # easy for walls to look like these characters
+                if char not in ('T', 'L', 'I', 'l', '-', '/', 'O', 'V', 'U') or last_was_char: # easy for walls to look like these characters
                     paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
                     shapes = list(take(elements, iterator))
-                    self._mark_character(char, shapes)
+                    self._mark_character(char, shapes, last_offset)
                     last_offset = shapes[0].child.offset
                     last_was_char = True
                     continue
@@ -396,25 +397,37 @@ class Floorplan2Svg(Pdf2Svg):
             center = np.mean(np.array(element.bounds).reshape((-1,2)), axis=0)
             g.append(Text(
                 text=element.child.vectortext,
-                fontSize='12pt',
+                fontSize='6pt',
                 x=center[0],
                 y=-center[1],
                 center=True,
                 valign='middle',
             ))
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Convert MIT floorplans to georeferenced SVGs.')
+    parser.add_argument('pdf', help='PDF file to process')
+    parser.add_argument('--debug-angle', action='store_true',
+                        help='debug north rotation')
+    parser.add_argument('--disable-annotations', action='store_true')
+    parser.add_argument('--disable-find-text', action='store_true')
+    parser.add_argument('--disable-reify-text', action='store_true')
+
+    return parser.parse_args()
+
 def main():
+    args = parse_args()
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger('decodegraphics').setLevel(logging.INFO)
 
     logging.debug("known shapes = %s", KNOWN_SHAPES)
 
-    inpfn, = sys.argv[1:]
+    inpfn = args.pdf
     outfn = 'copy.' + os.path.basename(inpfn)
     pages = PdfReader(inpfn, decompress=True).pages
 
     parser = Floorplan2Svg()
-    parser.debug_angle = True
+    parser.debug_angle = args.debug_angle
 
     sys.setrecursionlimit(sys.getrecursionlimit()*2)
 
@@ -439,20 +452,22 @@ def main():
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
         parser.find_north()
         parser.find_characters()
-        parser.find_text()
+        if not args.disable_find_text:
+            parser.find_text()
         annot_mat = np.dot(rotate_mat(rotate/180*np.pi), mat(-1,0,0,1,width,0))
         if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
             parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
             annot_mat = np.dot(rotate_mat(parser.north_angle), annot_mat)
-        parser.reify_text()
-        if annots:
+        if not args.disable_reify_text:
+            parser.reify_text()
+        if annots and not args.disable_annotations:
             annotg = Group(class_="annotations")
             d.append(annotg)
-        for a in annots:
-            rect = [float(x) for x in a.Rect]
-            rect = transformed_points(rect, annot_mat)[:,:2].flatten()
-            parser.debug_rect(rect, text=a.Contents.to_unicode(), parent=annotg, stroke="orange")
+            for a in annots:
+                rect = [float(x) for x in a.Rect]
+                rect = transformed_points(rect, annot_mat)[:,:2].flatten()
+                parser.debug_rect(rect, text=a.Contents.to_unicode(), parent=annotg, stroke="orange")
         print(d.asSvg())
 
 if __name__ == '__main__':
