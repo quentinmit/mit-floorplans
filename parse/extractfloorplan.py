@@ -357,12 +357,12 @@ class Floorplan2Svg(Pdf2Svg):
                 char_height = max(char_height, char_bounds[3]-char_bounds[1])
                 line_width = max(line_width, line_bounds[2]-line_bounds[0])
                 char_distance_x = (char.bounds[0] - char_bounds[2]) / char_width
-                char_distance_y = (char.bounds[3] - char_bounds[3]) / char_height
+                char_distance_y = (char.bounds[1] - char_bounds[1]) / char_height
                 # Ditto but with x/y swapped
                 line_distance_x = (char.bounds[0] - line_bounds[0]) / line_width
                 line_distance_y = (char.bounds[1] - line_bounds[3]) / char_height #(line_bounds[3]-line_bounds[1])
 
-                if 0 < char_distance_x < 2 and -.5 < char_distance_y < .5:
+                if 0 < char_distance_x < 2 and -.75 < char_distance_y < .75:
                     if char_distance_x > 1:
                         text += ' '
                     line_bounds = (min(line_bounds[0], char.bounds[0]), min(line_bounds[1], char.bounds[1]), max(line_bounds[2], char.bounds[2]), max(line_bounds[3], char.bounds[3]))
@@ -370,8 +370,8 @@ class Floorplan2Svg(Pdf2Svg):
                     text += '\n'
                     line_bounds = char.bounds
                 else:
-                    #logger.debug('considered %s, char dist = (%g,%g) line dist = (%g,%g)', char, char_distance_x, char_distance_y, line_distance_x, line_distance_y)
-                    #logger.debug('previous bounds were char %s line %s', char_bounds, line_bounds)
+                    logger.debug('after text %s considered %s, char dist = (%g,%g) line dist = (%g,%g)', text, char, char_distance_x, char_distance_y, line_distance_x, line_distance_y)
+                    logger.debug('previous bounds were char %s line %s', char_bounds, line_bounds)
                     break
 
                 chars.append(next(iterator))
