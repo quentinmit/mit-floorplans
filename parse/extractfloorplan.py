@@ -164,7 +164,15 @@ class Floorplan2Svg(Pdf2Svg):
 
         last_len = None
         possibilities = []
+        debug = False
         for char, char_shapes in KNOWN_SHAPES:
+            if len(char_shapes) != last_len and possibilities:
+                if debug:
+                    logger.debug("finished shapes of len %s, now %s, got possibilities %s", last_len, len(char_shapes), possibilities)
+                # Return the most-similar shape from the category with the highest number of strokes
+                return next(iter(sorted(possibilities)))[1:]
+            last_len = len(char_shapes)
+
             if char in ('(', ')', 'J') and len(first.commands) <= 2:
                 # These shapes are too similar to everything else
                 continue
@@ -181,17 +189,14 @@ class Floorplan2Svg(Pdf2Svg):
                 else:
                     norm = np.concatenate(norms)
                     score = np.mean(norm**2)
+                    if debug:
+                        logger.debug("considered %s, score %s", char, score)
                     if score < 0.03:
                         #score = np.max(norm)
                         possibilities.append((score, char, len(char_shapes)))
             except:
                 logger.exception("attempting to match %s %s\nnorms %s", char, char_shapes, norms)
                 raise
-
-            if len(char_shapes) != last_len and possibilities:
-                # Return the most-similar shape from the category with the highest number of strokes
-                return next(iter(sorted(possibilities)))[1:]
-            last_len = len(char_shapes)
 
         if possibilities:
             if len(possibilities) > 1:
