@@ -5,6 +5,7 @@ import collections
 import logging
 import sys
 import os
+import re
 from itertools import chain, count
 
 from more_itertools import peekable, take, ichunked
@@ -51,7 +52,7 @@ class Floorplan2Svg(Pdf2Svg):
             text = text.to_unicode()
         if '" =' in text:
             self.scale = text
-            logger.info("scale = %s", text)
+            logger.info("text scale = %s", text)
         if "request the plan you queried" in text:
             self.bogus = True
 
@@ -316,6 +317,9 @@ class Floorplan2Svg(Pdf2Svg):
         # FIXME: Some of these might be real
         if len(chars) <= 1:
             return
+        if '" =' in text and not self.scale:
+            self.scale = text
+            logger.info("ocr scale = %s", text)
         parent = chars[0].parent
         g = Group(class_="vectortext", stroke='blue', title=text)
         g.vectortext = text
@@ -411,6 +415,36 @@ class Floorplan2Svg(Pdf2Svg):
                 center=True,
                 valign='middle',
             ))
+    _SCALE_RE = re.compile(r"""(?:(?P<feet>\d+)'-?)?(?P<numerator>\d+)(?:/(?P<denominator>\d+))?"$""")
+    def _parse_scale(self, text):
+        text = text.strip()
+        m = self._SCALE_RE.match(text)
+        if not m:
+            logging.error("failed to parse scale %s", text)
+            raise ValueError("invalid scale")
+        inches = int(m.group("numerator"))
+        if denominator := m.group("denominator"):
+            inches /= int(denominator)
+        if feet := m.group("feet"):
+            inches += 12 * int(feet)
+        return inches
+
+    def apply_scale(self):
+        if not self.scale:
+            return
+        # scale should be a string of the form 1/32" = 1'0"
+        fake, real = self.scale.split(' = ')
+        # PDF default space is in units of 1/72"
+        # We want to end up in a space with units of cm
+        fake = self._parse_scale(fake) * 72
+        real = self._parse_scale(real) * 2.54
+        scale = real/fake
+        logging.info("applying scale of %g (%g pt -> %g cm)", scale, fake, real)
+
+        g = Group(
+            class_="pdfunits",
+            matrix=mat(scale, 0, 0, scale, 0, 0),
+        )
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Convert MIT floorplans to georeferenced SVGs.')
@@ -462,6 +496,7 @@ def main():
         parser.find_characters()
         if not args.disable_find_text:
             parser.find_text()
+        parser.apply_scale()
         annot_mat = np.dot(rotate_mat(rotate/180*np.pi), mat(-1,0,0,1,width,0))
         if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)

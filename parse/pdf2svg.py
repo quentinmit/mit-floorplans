@@ -89,6 +89,9 @@ class TransformMixin:
             self._matrix = matrix
             self.args['transform'] = self.transform
 
+    def apply_matrix(self, matrix):
+        self.matrix = np.dot(self.matrix, matrix)
+
     @property
     def transform(self):
         if (self.matrix == IDENTITY).all():
@@ -296,14 +299,18 @@ class Pdf2Svg(BaseParser):
         self.tl = 0 # leading
         self.trise = 0 # rise
 
-        if page.Rotate and int(page.Rotate) == 270:
-            self.gstate(_matrix=mat(0,-1,1,0,self.top.width,0))
         # PDF coordinate system is (0,0) at bottom left with positive y going up the screen
         # SVG coordinate system is (0,0) at top left with positive y going down the screen
         # So, apply a transformation matrix to flip the y axis
         # Setting the viewBox accordingly is the responsibility of the caller.
+        self.pdf2svg = Group(class_="pdf2svg", matrix=mat(1,0,0,-1,0,0))
+        self.add(self.pdf2svg)
+        self.stack.append(self.pdf2svg)
+
+        if page.Rotate and int(page.Rotate) == 270:
+            self.pdf2svg.apply_matrix(mat(0,-1,1,0,self.top.width,0))
         # FIXME: Why do we not need to shift by the height of the page to fix (0,0)?
-        self.gstate(_matrix=mat(1,0,0,-1,0,0))
+
         super().parsepage(page)
     #############################################################################
     # Graphics parsing
@@ -351,8 +358,8 @@ class Pdf2Svg(BaseParser):
                 _matrix = np.dot(_matrix, mat(1,0,0,1,x,y))
         if _matrix is None and len(kwargs) == 0:
             return
-        if not isinstance(self.last, Group):
-            #if len(self.stack) > 1:
+        if not isinstance(self.last, Group) or self.last == self.pdf2svg:
+            #if len(self.stack) > 2:
             #    oldg = self.stack.pop()
             # XXX: close last group and copy settings?
             if isinstance(self.stack[-1], Group) and len(self.stack[-1].args) == 1 and 'transform' in self.stack[-1].args:
