@@ -91,14 +91,21 @@ class Floorplan2Svg(Pdf2Svg):
             if isinstance(child, Group):
                 yield from self.iterelements(child, matrix)
 
-    def debug_rect(self, bounds, text=None, parent=None, stroke="black", fill="none", **kwargs):
+    def debug_rect(self, bounds, matrix=None, text=None, parent=None, stroke="black", fill="none", **kwargs):
         p = Path(stroke=stroke, fill=fill, **kwargs)
         if text:
             p.args['title'] = text
-        p.M(bounds[0], -bounds[1])
-        p.H(bounds[2])
-        p.V(-bounds[3])
-        p.H(bounds[0])
+        points = [
+            [bounds[0], bounds[1]],
+            [bounds[2], bounds[1]],
+            [bounds[2], bounds[3]],
+            [bounds[0], bounds[3]],
+            ]
+        if matrix is not None:
+            points = transformed_points(points,matrix)[:,:2]
+        p.M(points[0][0], -points[0][1])
+        for point in points[1:]:
+            p.L(point[0], -point[1])
         p.Z()
         if parent:
             parent.append(p)
@@ -497,11 +504,10 @@ def main():
         if not args.disable_find_text:
             parser.find_text()
         parser.apply_scale()
-        annot_mat = np.dot(rotate_mat(rotate/180*np.pi), mat(-1,0,0,1,width,0))
         if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
-            parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
-            annot_mat = np.dot(rotate_mat(parser.north_angle), annot_mat)
+            parser.pdf2svg.apply_matrix(rotate_mat(-parser.north_angle))
+            #parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
         if not args.disable_reify_text:
             parser.reify_text()
         if annots and not args.disable_annotations:
@@ -509,8 +515,7 @@ def main():
             d.append(annotg)
             for a in annots:
                 rect = [float(x) for x in a.Rect]
-                rect = transformed_points(rect, annot_mat)[:,:2].flatten()
-                parser.debug_rect(rect, text=a.Contents.to_unicode(), parent=annotg, stroke="orange")
+                parser.debug_rect(rect, matrix=parser.pdf2svg.matrix, text=a.Contents.to_unicode(), parent=annotg, stroke="orange")
         print(d.asSvg())
 
 if __name__ == '__main__':
