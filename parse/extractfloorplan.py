@@ -523,7 +523,7 @@ def main():
         if parser.scale:
             fontSize = 100 # Make characters 1m by default
         if not args.disable_reify_text:
-            parser.reify_text()
+            parser.reify_text(fontSize)
         if annots and not args.disable_annotations:
             annotg = Group(class_="annotations")
             d.append(annotg)
