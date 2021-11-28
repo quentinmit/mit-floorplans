@@ -53,6 +53,8 @@ def transformed_points(points, matrix):
 
 
 def transformed_bounds(points, matrix):
+    if points is None or len(points) == 0:
+        return None
     points = np.array(points).reshape((-1, 2))
     if (matrix == IDENTITY).all():
         minx = min(x for x, _ in points)
@@ -114,6 +116,14 @@ class Group(TransformMixin, draw.Group):
         #logger.info("%s child_bounds = %s", self, child_bounds)
         return self.transformed_bounds(child_bounds)
 
+    def projected_bounds(self, matrix=IDENTITY):
+        child_bounds = [c.projected_bounds(np.dot(self.matrix, matrix)) for c in self.children]
+        child_bounds = [b for b in child_bounds if b is not None]
+        if not child_bounds:
+            return None
+        child_bounds = np.array(child_bounds).reshape((-1, 2))
+        return transformed_bounds(child_bounds, IDENTITY)
+
     def __str__(self):
         out = self.__class__.__name__
         if 'class' in self.args:
@@ -156,7 +166,7 @@ _PATH_SPLIT_RE = re.compile(r"(?<!^) *(?=[a-zA-Z])")
 
 class Path(TransformMixin, draw.Path):
     @path_property
-    def bounds(self):
+    def _points(self):
         points = []
         for command in self.args['d'].split(' '):
             args = []
@@ -178,9 +188,14 @@ class Path(TransformMixin, draw.Path):
                     points.append((args[-2], args[-1]))
                 else:
                     points.append((cpx+args[-2], cpy+args[-2]))
-        if not points:
-            return None
-        return self.transformed_bounds(np.array(points))
+        return points
+
+    @path_property
+    def bounds(self):
+        return self.transformed_bounds(np.array(self._points))
+
+    def projected_bounds(self, matrix):
+        return transformed_bounds(self._points, np.dot(self.matrix, matrix))
 
     @path_property
     def commands(self):
@@ -277,6 +292,13 @@ class Text(TransformMixin, draw.Text):
             # TODO: Calculate width
             x,y = self.args['x'], self.args['y']
             return np.dot([[x,y,1],[x,y,1]], self.matrix)[:,:2].flatten()
+        return None
+
+    def projected_bounds(self, matrix):
+        if 'x' in self.args and 'y' in self.args:
+            # TODO: Calculate width
+            x,y = self.args['x'], self.args['y']
+            return np.dot([[x,y,1],[x,y,1]], np.dot(self.matrix, matrix))[:,:2].flatten()
         return None
 
 

@@ -76,7 +76,12 @@ class Floorplan2Svg(Pdf2Svg):
                     parent.children.remove(child)
             else:
                 bounds = transformed_bounds(child.bounds, matrix)
-                if bounds[3] > -0.2*self.top.height:
+                width = bounds[2] - bounds[0]
+                height = bounds[3] - bounds[1]
+                if width == 0 and height == 0:
+                    parent.children.remove(child)
+                    logger.warning("Removing zero-size path")
+                elif bounds[3] > -0.2*self.top.height:
                     parent.children.remove(child)
 
     def iterelements(self, parent=None, matrix=IDENTITY):
@@ -119,7 +124,7 @@ class Floorplan2Svg(Pdf2Svg):
         north_bounds = [left+(0.7*width), top+(0.89*height), left+(0.76*width), top+height]
 
         if self.debug_angle:
-            self.debug_rect(north_bounds, stroke="blue")
+            self.debug_rect(transformed_bounds(north_bounds, np.linalg.inv(self.pdf2svg.matrix)), parent=self.pdf2svg, stroke="blue")
 
         logger.info("North expected within %s", north_bounds)
 
@@ -172,7 +177,7 @@ class Floorplan2Svg(Pdf2Svg):
 
         last_len = None
         possibilities = []
-        debug = False
+        debug = (first.bounds == (658.3200472, -466.81686559999997, 666.4999528, -463.46))
         for char, char_shapes in KNOWN_SHAPES:
             if len(char_shapes) != last_len and possibilities:
                 if debug:
@@ -199,7 +204,7 @@ class Floorplan2Svg(Pdf2Svg):
                     score = np.mean(norm**2)
                     if debug:
                         logger.debug("considered %s, score %s", char, score)
-                    if score < 0.03:
+                    if score < 0.025:
                         #score = np.max(norm)
                         possibilities.append((score, char, len(char_shapes)))
             except:
@@ -397,12 +402,12 @@ class Floorplan2Svg(Pdf2Svg):
             logger.info('vector text "%s" found at %s: %s', text, first.bounds[:2], chars)
             self._mark_text(text, chars)
 
-    def reify_text(self):
+    def reify_text(self, fontSize=100):
         def _iterator():
             for parent, child, matrix in self.iterelements():
                 if not isinstance(child, Group) or 'vectortext' not in child.args.get('class', ''):
                     continue
-                bounds = transformed_bounds(child.bounds, matrix)
+                bounds = child.projected_bounds(matrix)
                 yield self._Element(parent, child, bounds)
 
         g = Group(
@@ -416,7 +421,7 @@ class Floorplan2Svg(Pdf2Svg):
             center = np.mean(np.array(element.bounds).reshape((-1,2)), axis=0)
             g.append(Text(
                 text=element.child.vectortext,
-                fontSize='6pt',
+                fontSize=fontSize,
                 x=center[0],
                 y=-center[1],
                 center=True,
@@ -442,16 +447,22 @@ class Floorplan2Svg(Pdf2Svg):
         # scale should be a string of the form 1/32" = 1'0"
         fake, real = self.scale.split(' = ')
         # PDF default space is in units of 1/72"
-        # We want to end up in a space with units of cm
+        # We want to end up in a space with units of cm (not m because SVG doesn't like small viewboxes)
         fake = self._parse_scale(fake) * 72
         real = self._parse_scale(real) * 2.54
         scale = real/fake
-        logging.info("applying scale of %g (%g pt -> %g cm)", scale, fake, real)
+        logger.info("applying scale of %g (%g pt -> %g cm)", scale, fake, real)
 
-        g = Group(
-            class_="pdfunits",
-            matrix=mat(scale, 0, 0, scale, 0, 0),
-        )
+        logger.info("pre-scale bounds %s viewbox %s", self.pdf2svg.bounds, self.top.viewBox)
+
+        self.pdf2svg.apply_matrix(mat(scale, 0, 0, scale, 0, 0))
+
+        #bounds = self.pdf2svg.bounds
+        bounds = self.pdf2svg.projected_bounds()
+        self.top.viewBox = (bounds[0], bounds[1], width := bounds[2]-bounds[0], height := bounds[3]-bounds[1])
+        logger.info("post-scale bounds %s viewbox %s", bounds, self.top.viewBox)
+        self.top.width = int(width)
+        self.top.height = int(height)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Convert MIT floorplans to georeferenced SVGs.')
@@ -503,11 +514,14 @@ def main():
         parser.find_characters()
         if not args.disable_find_text:
             parser.find_text()
-        parser.apply_scale()
         if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
             parser.pdf2svg.apply_matrix(rotate_mat(-parser.north_angle))
             #parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
+        parser.apply_scale()
+        fontSize = 6
+        if parser.scale:
+            fontSize = 100 # Make characters 1m by default
         if not args.disable_reify_text:
             parser.reify_text()
         if annots and not args.disable_annotations:
