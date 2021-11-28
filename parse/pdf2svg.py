@@ -10,6 +10,7 @@ for most things, see the Form XObject-based method.
 
 '''
 
+from collections import namedtuple
 import functools
 import itertools
 import logging
@@ -61,12 +62,22 @@ def transformed_bounds(points, matrix):
         miny = min(y for _, y in points)
         maxx = max(x for x, _ in points)
         maxy = max(y for _, y in points)
-        return (minx,miny,maxx,maxy)
+        return Bounds(minx,miny,maxx,maxy)
     points = transformed_points(points, matrix)
     minx,miny,_ = np.min(points, axis=0)
     maxx,maxy,_ = np.max(points, axis=0)
     #logger.debug("bounds of %s = %s", self, (minx,miny,maxx,maxy))
-    return (minx,miny,maxx,maxy)
+    return Bounds(minx,miny,maxx,maxy)
+
+
+class Bounds(namedtuple("Bounds", "minx miny maxx maxy".split())):
+    @property
+    def width(self):
+        return self.maxx-self.minx
+
+    @property
+    def height(self):
+        return self.maxy-self-miny
 
 
 class TransformMixin:
@@ -288,17 +299,13 @@ class Path(TransformMixin, draw.Path):
 class Text(TransformMixin, draw.Text):
     @property
     def bounds(self):
-        if 'x' in self.args and 'y' in self.args:
-            # TODO: Calculate width
-            x,y = self.args['x'], self.args['y']
-            return np.dot([[x,y,1],[x,y,1]], self.matrix)[:,:2].flatten()
-        return None
+        return self.projected_bounds()
 
-    def projected_bounds(self, matrix):
+    def projected_bounds(self, matrix=IDENTITY):
         if 'x' in self.args and 'y' in self.args:
             # TODO: Calculate width
             x,y = self.args['x'], self.args['y']
-            return np.dot([[x,y,1],[x,y,1]], np.dot(self.matrix, matrix))[:,:2].flatten()
+            return Bounds(*np.dot([[x,y,1],[x,y,1]], np.dot(self.matrix, matrix))[:,:2].flatten())
         return None
 
 
