@@ -80,6 +80,8 @@ class Floorplan2Svg(Pdf2Svg):
                     logger.warning("Removing zero-size path")
                 elif bounds[3] > -0.2*self.top.height:
                     parent.children.remove(child)
+                elif bounds[0] > self.top.viewBox[0]+(0.9*self.top.width):
+                    parent.children.remove(child)
 
     def iterelements(self, parent=None, matrix=IDENTITY):
         if parent:
