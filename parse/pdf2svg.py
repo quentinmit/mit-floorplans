@@ -315,6 +315,12 @@ class Text(TransformMixin, draw.Text):
             return Bounds(*np.dot([[x,y,1],[x,y,1]], np.dot(self.matrix, matrix))[:,:2].flatten())
         return None
 
+    @property
+    def text(self):
+        if self.escapedText:
+            return self.escapedText
+        return "\n".join(c.escapedText for c in self.children)
+
 
 @debugparser()
 class Pdf2Svg(BaseParser):

@@ -2,11 +2,12 @@
 
 import argparse
 import collections
+from itertools import chain, count
+import json
 import logging
-import sys
 import os
 import re
-from itertools import chain, count
+import sys
 
 from more_itertools import peekable, take, ichunked
 import numpy as np
@@ -486,12 +487,60 @@ class Floorplan2Svg(Pdf2Svg):
         # NAD83 / Massachusetts Mainland
         # https://spatialreference.org/ref/epsg/nad83-massachusetts-mainland/
 
+    _ROOM_RE = re.compile(r"^(\d\d\d[0-9A-Z]*)($|\n)")
+
+    def find_rooms(self, rooms, fontSize):
+        def _iterator():
+            for parent, child, matrix in self.iterelements():
+                if not isinstance(child, Text):
+                    continue
+                bounds = child.projected_bounds(matrix)
+                yield self._Element(parent, child, bounds)
+
+        g = Group(class_="rooms")
+        self.top.append(g)
+
+        seen = dict()
+        for element in _iterator():
+            center = element.child.args["x"], element.child.args["y"]
+
+            m = self._ROOM_RE.match(element.child.text)
+            if m:
+                roomNumber = m.group(1)
+                seen[roomNumber] = {
+                    "easting_offset": center[0],
+                    "northing_offset": -center[1],
+                }
+                element.parent.children.remove(element.child)
+                room = rooms.get(roomNumber)
+                g.append(Text(roomNumber, fontSize=fontSize, x=center[0], y=-center[1], center=True, valign="middle", fill="green" if room else "red"))
+        return seen
+
 class Floorplans:
     def __init__(self, args):
         self.data = None
         self.args = args
 
+    def load_data(self, fname):
+        self.data = json.load(open(fname, 'r'))
+
+    _FILENAME_RE = re.compile(r"^([^_]+)_([^_.]+).pdf$")
+
+    def parse_filename(self, inpfn):
+        m = self._FILENAME_RE.match(os.path.basename(inpfn))
+        if m:
+            return m.group(1), m.group(2)
+
+    def fac_rooms(self, building, floor):
+        return {
+            room["room"]: room
+            for room in self.data.get("fac_rooms", [])
+            if room["building_key"] == building and room["floor"] == floor
+        }
+
     def process_pdf(self, inpfn):
+        building, floor = self.parse_filename(inpfn)
+
         outfn = os.path.splitext(os.path.basename(inpfn))[0] + '.svg'
 
         logger.info("processing %s to %s", inpfn, outfn)
@@ -539,6 +588,10 @@ class Floorplans:
             fontSize = 100 # Make characters 1m by default
         if not self.args.disable_reify_text:
             parser.reify_text(fontSize)
+            rooms = self.fac_rooms(building, floor)
+            seen = parser.find_rooms(rooms, fontSize)
+            logger.info("Found rooms: %s", seen)
+            logger.info("Missing rooms: %s", set(rooms)-set(seen))
         if annots and not self.args.disable_annotations:
             annotg = Group(class_="annotations")
             d.append(annotg)
@@ -570,6 +623,8 @@ def main():
     sys.setrecursionlimit(sys.getrecursionlimit()*2)
 
     f = Floorplans(args)
+    if args.pdfs:
+        f.load_data(os.path.join(os.path.dirname(args.pdfs[0]), "data.json"))
     for inpfn in args.pdfs:
         f.process_pdf(inpfn)
 
