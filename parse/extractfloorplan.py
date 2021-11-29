@@ -478,6 +478,15 @@ class Floorplan2Svg(Pdf2Svg):
 
         self.fix_viewbox()
 
+    def recenter(self):
+        bounds = self.pdf2svg.projected_bounds()
+        center = np.mean(np.array(bounds).reshape((-1, 2)), axis=0)
+        self.apply_offset(-center[1], -center[0])
+
+    def apply_offset(self, northing, easting):
+        self.pdf2svg.apply_matrix(mat(1, 0, 0, 1, easting, northing))
+        self.fix_viewbox()
+
     def fix_viewbox(self):
         bounds = self.pdf2svg.projected_bounds()
         self.top.viewBox = (bounds[0], bounds[1], width := bounds[2]-bounds[0], height := bounds[3]-bounds[1])
@@ -584,7 +593,19 @@ class Floorplans:
             parser.pdf2svg.apply_matrix(rotate_mat(-parser.north_angle))
             parser.fix_viewbox()
             #parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
+        parser.recenter()
         parser.apply_scale()
+        for b in self.data.get("buildings", []):
+            if b["building_number"] == building:
+                northing = b.get("northing_y_spcs")
+                easting = b.get("easting_x_spcs")
+                if northing and easting:
+                    parser.apply_offset(-northing, easting)
+                else:
+                    logging.error("Building %s does not have an offset: %s", building, b)
+                break
+        else:
+            logging.error("Unknown building %s", building)
         fontSize = 6
         if parser.scale:
             fontSize = 1 # Make characters 1m by default
