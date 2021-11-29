@@ -18,6 +18,13 @@ import logging
 from pdfrw import PdfTokens
 from pdfrw.objects import PdfString
 
+def bytesplusone(b):
+    for i in range(len(b)-1, -1, -1):
+        if b[i] < 0xFF:
+            return bytes(list(b[:i]) + [b[i]+1] + [0]*(len(b)-i-1))
+    # Must have wrapped
+    return bytes([0] * len(b))
+
 class FontInfo(object):
     ''' Pretty basic -- needs a lot of work to work right for all fonts
     '''
@@ -41,19 +48,49 @@ class FontInfo(object):
         if not info:
             return
         info = info.stream
-        if 'beginbfchar' not in info:
-            return
-        info = info.stream.split('beginbfchar')[1].split('endbfchar')[0]
-        info = list(PdfTokens(info))
-        assert not len(info) & 1
-        info2 = []
-        for x in info:
-            assert x[0] == '<' and x[-1] == '>' and len(x) in (4, 6), x
-            i = int(x[1:-1], 16)
-            info2.append(i)
-        self.remap = dict((x, chr(y)) for (x, y) in
-                          zip(info2[::2], info2[1::2])).get
-        self.twobyte = len(info[0]) > 4
+        logger.debug("ToUnicode %s", info)
+        remap = dict()
+        if 'beginbfchar' in info:
+            info = info.split('beginbfchar')[1].split('endbfchar')[0]
+            info = list(PdfTokens(info))
+            assert not len(info) & 1
+            info2 = []
+            for x in info:
+                assert x[0] == '<' and x[-1] == '>' and len(x) in (4, 6), x
+                i = int(x[1:-1], 16)
+                info2.append(i)
+            remap.update(dict((x, chr(y)) for (x, y) in
+                              zip(info2[::2], info2[1::2])))
+            self.twobyte = len(info[0]) > 4
+        if 'beginbfrange' in info:
+            info = info.split('beginbfrange')[1].split('endbfrange')[0]
+            i = iter(PdfTokens(info))
+            while True:
+                try:
+                    start = next(i).to_bytes()
+                except StopIteration:
+                    break
+                if len(start) > 1:
+                    self.twobyte = True
+                end = next(i).to_bytes()
+                dest = next(i)
+                if dest == '[':
+                    while start <= end:
+                        dest = next(i)
+                        assert dest != ']'
+                        remap[start] = dest.to_bytes().decode('utf_16_be')
+                        start = bytesplusone(start)
+                    assert next(i) == ']'
+                else:
+                    dest = dest.to_bytes()
+                    while start <= end:
+                        remap[start] = dest.decode('utf_16_be')
+                        start = bytesplusone(start)
+                        dest = bytesplusone(dest)
+            logger.debug("bfrange = %s", info)
+        if remap:
+            logger.debug("character map = %s", remap)
+            self.remap = remap.get
 
 #############################################################################
 # Control structures
