@@ -20,11 +20,11 @@ def fetch_data():
     out = dict()
 
     for key, query in {
-            "buildings": "select * from fac_building", # buildings has building_street_address
-            "floors": "select * from fac_floor",
-            "organizations": "select * from fac_organization",
-            "fac_rooms": "select * from fac_rooms",
-            "rooms": "select building_number, building_component, floor, room_number, building_room, building_room_name, room_square_footage, space_unit_code, space_unit, dlc_key, fclt_organization_key as organization_key, space_usage from space_detail left join buildings using (building_key) left join space_floor using (floor_key) left join space_unit using (space_unit_key) left join space_usage using (space_usage_key)",
+            "buildings": "select * from fac_building order by fac_building_key asc", # buildings has building_street_address
+            "floors": "select * from fac_floor order by building_key asc, floor_key asc",
+            "organizations": "select * from fac_organization order by organization_key asc",
+            "fac_rooms": "select * from fac_rooms order by fac_room_key asc",
+            "rooms": "select building_number, building_component, floor, room_number, building_room, building_room_name, room_square_footage, space_unit_code, space_unit, dlc_key, fclt_organization_key as organization_key, space_usage from space_detail left join buildings using (building_key) left join space_floor using (floor_key) left join space_unit using (space_unit_key) left join space_usage using (space_usage_key) order by building_number asc, building_component asc, building_room asc",
     }.items():
         cursor = conn.cursor()
         cursor.execute(query)
