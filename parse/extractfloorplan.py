@@ -201,7 +201,7 @@ class Floorplan2Svg(Pdf2Svg):
                     norms.append(self._same(char_points, (shape.points+shape.offset-first.offset)/div))
                 else:
                     norm = np.concatenate(norms)
-                    score = np.mean(norm**2)
+                    score = np.max(norm**2)
                     if debug:
                         logger.debug("considered %s, score %s", char.char, score)
                     if score < 0.025 and abs(char.divisor/div - 1) < 0.01:
@@ -294,7 +294,7 @@ class Floorplan2Svg(Pdf2Svg):
             if result:
                 char, elements = result
                 logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
-                if char not in ('T', 'L', 'I', 'l', '-', '/', 'O', 'V', 'U') or last_was_char: # easy for walls to look like these characters
+                if char not in ('T', 'L', 'I', 'l', '-', '/', 'O', 'V') or last_was_char: # easy for walls to look like these characters
                     paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
                     shapes = list(take(elements, iterator))
                     self._mark_character(char, shapes, last_offset)
