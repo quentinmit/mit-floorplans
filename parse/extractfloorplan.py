@@ -471,26 +471,18 @@ class Floorplan2Svg(Pdf2Svg):
 
         self.pdf2svg.apply_matrix(mat(scale, 0, 0, scale, 0, 0))
 
-        #bounds = self.pdf2svg.bounds
+        self.fix_viewbox()
+
+    def fix_viewbox(self):
         bounds = self.pdf2svg.projected_bounds()
         self.top.viewBox = (bounds[0], bounds[1], width := bounds[2]-bounds[0], height := bounds[3]-bounds[1])
-        logger.info("post-scale bounds %s viewbox %s", bounds, self.top.viewBox)
+        logger.info("new bounds %s viewbox %s", bounds, self.top.viewBox)
         self.top.width = int(width)
         self.top.height = int(height)
 
         # TODO: Apply EPSG:26986
         # NAD83 / Massachusetts Mainland
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='Convert MIT floorplans to georeferenced SVGs.')
-    parser.add_argument('pdf', help='PDF file to process')
-    parser.add_argument('--debug-angle', action='store_true',
-                        help='debug north rotation')
-    parser.add_argument('--disable-annotations', action='store_true')
-    parser.add_argument('--disable-find-text', action='store_true')
-    parser.add_argument('--disable-reify-text', action='store_true')
-
-    return parser.parse_args()
+        # https://spatialreference.org/ref/epsg/nad83-massachusetts-mainland/
 
 class Floorplans:
     def __init__(self, args):
@@ -537,6 +529,7 @@ class Floorplans:
         if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
             parser.pdf2svg.apply_matrix(rotate_mat(-parser.north_angle))
+            parser.fix_viewbox()
             #parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
         parser.apply_scale()
         fontSize = 6
@@ -550,8 +543,19 @@ class Floorplans:
             for a in annots:
                 rect = [float(x) for x in a.Rect]
                 parser.debug_rect(rect, matrix=parser.pdf2svg.matrix, text=a.Contents.to_unicode(), parent=annotg, stroke="orange")
-        print(d.asSvg())
+        d.saveSvg(outfn)
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Convert MIT floorplans to georeferenced SVGs.')
+    parser.add_argument('pdfs', metavar='PDF', nargs='+', help='PDF file to process')
+    parser.add_argument('--debug-angle', action='store_true',
+                        help='debug north rotation')
+    parser.add_argument('--disable-annotations', action='store_true')
+    parser.add_argument('--disable-find-text', action='store_true')
+    parser.add_argument('--disable-reify-text', action='store_true')
+
+    return parser.parse_args()
 
 
 def main():
@@ -561,12 +565,11 @@ def main():
 
     logging.debug("known shapes = %s", KNOWN_SHAPES)
 
-    inpfn = args.pdf
-
     sys.setrecursionlimit(sys.getrecursionlimit()*2)
 
     f = Floorplans(args)
-    f.process_pdf(inpfn)
+    for inpfn in args.pdfs:
+        f.process_pdf(inpfn)
 
 if __name__ == '__main__':
     main()
