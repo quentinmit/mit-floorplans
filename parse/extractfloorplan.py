@@ -334,11 +334,13 @@ class Floorplan2Svg(Pdf2Svg):
         for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
             logger.info("%d copies of %s: %s", count, path_ids.get(shape), shape)
 
+    _SCALE_RE = re.compile('\s*=\s*'.join([r"""((?:\d+'-?)?\d+(?:/\d+)?")"""]*2))
+
     def _mark_text(self, text, chars):
         # FIXME: Some of these might be real
         if len(chars) <= 1:
             return
-        if '" =' in text and not self.scale:
+        if self._SCALE_RE.match(text) and not self.scale:
             self.scale = text
             logger.info("ocr scale = %s", text)
         parent = chars[0].parent
@@ -462,13 +464,13 @@ class Floorplan2Svg(Pdf2Svg):
         if not self.scale:
             return
         # scale should be a string of the form 1/32" = 1'0"
-        fake, real = self.scale.split(' = ')
+        fake, real = self._SCALE_RE.match(self.scale).groups()
         # PDF default space is in units of 1/72"
         # We want to end up in a space with units of cm (not m because SVG doesn't like small viewboxes)
         fake = self._parse_scale(fake) * 72
-        real = self._parse_scale(real) * 2.54
+        real = self._parse_scale(real) * 2.54 / 100
         scale = real/fake
-        logger.info("applying scale of %g (%g pt -> %g cm)", scale, fake, real)
+        logger.info("applying scale of %g (%g pt -> %g m)", scale, fake, real)
 
         logger.info("pre-scale bounds %s viewbox %s", self.pdf2svg.bounds, self.top.viewBox)
 
@@ -585,7 +587,7 @@ class Floorplans:
         parser.apply_scale()
         fontSize = 6
         if parser.scale:
-            fontSize = 100 # Make characters 1m by default
+            fontSize = 1 # Make characters 1m by default
         if not self.args.disable_reify_text:
             parser.reify_text(fontSize)
             rooms = self.fac_rooms(building, floor)
