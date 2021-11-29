@@ -178,20 +178,20 @@ class Floorplan2Svg(Pdf2Svg):
         last_len = None
         possibilities = []
         debug = (first.bounds == (658.3200472, -466.81686559999997, 666.4999528, -463.46))
-        for char, char_shapes in KNOWN_SHAPES:
-            if len(char_shapes) != last_len and possibilities:
+        for char in KNOWN_SHAPES:
+            if len(char.shapes) != last_len and possibilities:
                 if debug:
-                    logger.debug("finished shapes of len %s, now %s, got possibilities %s", last_len, len(char_shapes), possibilities)
+                    logger.debug("finished shapes of len %s, now %s, got possibilities %s", last_len, len(char.shapes), possibilities)
                 # Return the most-similar shape from the category with the highest number of strokes
                 return next(iter(sorted(possibilities)))[1:]
-            last_len = len(char_shapes)
+            last_len = len(char.shapes)
 
-            if char in ('(', ')', 'J') and len(first.commands) <= 2:
+            if char.char in ('(', ')', 'J') and len(first.commands) <= 2:
                 # These shapes are too similar to everything else
                 continue
             norms = []
             try:
-                for i, char_points in enumerate(char_shapes):
+                for i, char_points in enumerate(char.shapes):
                     try:
                         shape = peekable[i]
                     except IndexError:
@@ -203,17 +203,21 @@ class Floorplan2Svg(Pdf2Svg):
                     norm = np.concatenate(norms)
                     score = np.mean(norm**2)
                     if debug:
-                        logger.debug("considered %s, score %s", char, score)
+                        logger.debug("considered %s, score %s", char.char, score)
+                    if score < 0.025 and abs(char.divisor/div - 1) < 0.01:
+                        logger.warn("perfect match %s divisors %s %s", char.char, char.divisor, div)
                     if score < 0.025:
                         #score = np.max(norm)
-                        possibilities.append((score, char, len(char_shapes)))
+                        # Add 1 to every score that isn't a perfect size match
+                        score += (abs(char.divisor/div - 1) > 0.01)*1
+                        possibilities.append((score, char.char, len(char.shapes)))
             except:
-                logger.exception("attempting to match %s %s\nnorms %s", char, char_shapes, norms)
+                logger.exception("attempting to match %s\nnorms %s", char, norms)
                 raise
 
         if possibilities:
             if len(possibilities) > 1:
-                logger.info("multiple possibilities found for %s", [peekable[i].child for i in range(len(char_shapes))])
+                logger.info("multiple possibilities found for %s", [peekable[i].child for i in range(len(char.shapes))])
                 for (score, char, l) in sorted(possibilities):
                     logger.info("possible %s with score %s", char, score)
             return next(iter(sorted(possibilities)))[1:]
@@ -435,10 +439,10 @@ class Floorplan2Svg(Pdf2Svg):
                 center=True,
                 valign='middle',
             ))
-    _SCALE_RE = re.compile(r"""(?:(?P<feet>\d+)'-?)?(?P<numerator>\d+)(?:/(?P<denominator>\d+))?"$""")
+    _SCALE_PART_RE = re.compile(r"""(?:(?P<feet>\d+)'-?)?(?P<numerator>\d+)(?:/(?P<denominator>\d+))?"$""")
     def _parse_scale(self, text):
         text = text.strip()
-        m = self._SCALE_RE.match(text)
+        m = self._SCALE_PART_RE.match(text)
         if not m:
             logging.error("failed to parse scale %s", text)
             raise ValueError("invalid scale")
