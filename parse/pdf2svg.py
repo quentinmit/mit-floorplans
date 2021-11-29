@@ -667,9 +667,11 @@ class Pdf2Svg(BaseParser):
 
     @token('Tj', 't')
     def parse_text_out(self, text):
-        if isinstance(text, PdfString):
-            text = text.to_unicode()
-        logging.info("text %s", text)
+        text = self.curfont.decode_string(text)
+        self.do_text(text)
+
+    def do_text(self, text):
+        logging.info("text %r", text)
         matrix = np.dot(mat(self.curfontsize*self.th,0,0,self.curfontsize,0,self.trise), self.tmat)
         # XXX Update tmat by x += ((w0-(Tj/1000))*tfs+tc+tw)*th
         self.add(
@@ -694,18 +696,16 @@ class Pdf2Svg(BaseParser):
 
     @token('TJ', 'a')
     def parse_TJ(self, array):
-        remap = self.curfont.remap
-        twobyte = self.curfont.twobyte
         result = []
         for x in array:
             if isinstance(x, PdfString):
                 #result.append(x.decode(remap, twobyte))
-                result.append(x.to_unicode())
+                result.append(self.curfont.decode_string(x))
             else:
                 # TODO: Adjust spacing between characters here
                 float(x)
         text = ''.join(result)
-        self.parse_text_out(text)
+        self.do_text(text)
 
     @token('ET')
     def parse_end_text(self):

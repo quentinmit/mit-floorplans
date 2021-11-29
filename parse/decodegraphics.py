@@ -11,12 +11,13 @@ Needs work on fonts and unicode, but works on a few PDFs.
 Better to use Form XObjects for most things (see the example in rl1).
 
 '''
-from inspect import getargspec
+import codecs
 from itertools import chain
 import logging
 
 from pdfrw import PdfTokens
 from pdfrw.objects import PdfString
+from pdfrw.py23_diffs import convert_store
 
 def bytesplusone(b):
     for i in range(len(b)-1, -1, -1):
@@ -42,7 +43,7 @@ class FontInfo(object):
         logger.debug("font %s", source)
         name = source.BaseFont[1:]
         self.name = self.lookup.get(name, name)
-        self.remap = chr
+        self.remap = None
         self.twobyte = False
         info = source.ToUnicode
         if not info:
@@ -90,7 +91,19 @@ class FontInfo(object):
             logger.debug("bfrange = %s", info)
         if remap:
             logger.debug("character map = %s", remap)
-            self.remap = remap.get
+            self.remap = remap
+
+    def decode_string(self, string):
+        if self.remap is None:
+            return string.to_unicode()
+        logger.debug("decoding %r", string)
+        if isinstance(string, PdfString):
+            b = string.to_bytes()
+        else:
+            b = convert_store(string)
+        if not self.twobyte:
+            return codecs.charmap_decode(b, 'strict', {k[0]: v for k,v in self.remap.items()})[0]
+        raise NotImplementedError("don't know how to handle multibyte encoding")
 
 #############################################################################
 # Control structures

@@ -45,11 +45,8 @@ class Floorplan2Svg(Pdf2Svg):
     #             return
     #     super().gstate(_matrix=_matrix, **kwargs)
 
-    @token('Tj', 't')
-    def parse_text_out(self, text):
-        super().parse_text_out(text)
-        if isinstance(text, PdfString):
-            text = text.to_unicode()
+    def do_text(self, text):
+        super().do_text(text)
         if '" =' in text:
             self.scale = text
             logger.info("text scale = %s", text)
@@ -163,7 +160,7 @@ class Floorplan2Svg(Pdf2Svg):
             a = transformed_points(a, rotate_mat(-angle/180*np.pi))[:,:2]
         return a
 
-    def _ocr(self, peekable):
+    def _ocr(self, peekable, last_was_char):
         """
         Attempt to recognize a character in peekable, a peekable stream of _Shape.
 
@@ -295,7 +292,7 @@ class Floorplan2Svg(Pdf2Svg):
         last_offset = None
         while iterator:
             # Try to OCR the next N shapes
-            result = self._ocr(iterator)
+            result = self._ocr(iterator, last_was_char)
             if result:
                 char, elements = result
                 logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
