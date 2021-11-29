@@ -77,7 +77,11 @@ class Bounds(namedtuple("Bounds", "minx miny maxx maxy".split())):
 
     @property
     def height(self):
-        return self.maxy-self-miny
+        return self.maxy-self.miny
+
+    @property
+    def size(self):
+        return max(self.width, self.height)
 
 
 class TransformMixin:

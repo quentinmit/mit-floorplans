@@ -395,6 +395,14 @@ class Floorplan2Svg(Pdf2Svg):
                     logger.debug('previous bounds were char %s line %s', char_bounds, line_bounds)
                     break
 
+                # Fix characters that are indistinguishable from each other.
+                if char.child.vectorchar == 'I' and text[-1].islower():
+                    char.child.vectorchar = 'l'
+                elif char.child.vectorchar in ('O', 'o', '0'):
+                    logger.info('potential misrecognized character %s after "%s": ratio %g', char.child.vectorchar, text, char.bounds.size / char_bounds.size)
+                    if char.bounds.size / char_bounds.size < .25:
+                        # Misrecognized .
+                        char.child.vectorchar = '.'
                 chars.append(next(iterator))
                 text += char.child.vectorchar
                 char_bounds = char.bounds
