@@ -177,7 +177,12 @@ class Floorplan2Svg(Pdf2Svg):
 
         last_len = None
         possibilities = []
-        debug = (first.bounds == (658.3200472, -466.81686559999997, 666.4999528, -463.46))
+        debug = (first.bounds == (611.1599999999997, -399.17999999999984, 612.4199999999997, -397.3199999999998))
+        if debug:
+            logger.debug("Attempting to match character at %s", first.bounds)
+            for i in range(3):
+                logger.debug("peekable[%d] = %s", i, peekable[i])
+                logger.debug("curves = %s", peekable[i].child.curves)
         for char in KNOWN_SHAPES:
             if len(char.shapes) != last_len and possibilities:
                 if debug:

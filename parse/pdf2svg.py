@@ -285,15 +285,18 @@ class Path(TransformMixin, draw.Path):
             np.cumsum(lengths),
             np.arange(lengths.size),
         )
-        splits = np.unique(offsets.astype(int), return_index=True)[1][1:-1]
-        #logger.debug("quantizing %s with curves of length %s", self, lengths)
-        #logger.debug("calculated offsets: %s", offsets)
-        #logger.debug("split points: %s", splits)
+        splits = np.unique(offsets.astype(int)[:-1], return_index=True)[1][1:]
+        # logger.debug("quantizing %s with curves of length %r (total %s)", self, lengths, total_length)
+        # logger.debug("cumsum = %r", np.cumsum(lengths))
+        # logger.debug("arange = %r", np.arange(lengths.size))
+        # logger.debug("calculated offsets: %r", offsets)
+        # logger.debug("split points: %r", splits)
         points = []
         for offsets in np.split(offsets, splits):
             i = int(offsets[0])
             curve = self.curves[i]
             points.append(curve.evaluate_multi(offsets-i).T)
+            # logger.debug("curve %s points %s", curve, points[-1])
         return np.vstack(points)
 
     def __repr__(self):
