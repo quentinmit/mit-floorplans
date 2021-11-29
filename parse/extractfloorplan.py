@@ -478,6 +478,9 @@ class Floorplan2Svg(Pdf2Svg):
         self.top.width = int(width)
         self.top.height = int(height)
 
+        # TODO: Apply EPSG:26986
+        # NAD83 / Massachusetts Mainland
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Convert MIT floorplans to georeferenced SVGs.')
     parser.add_argument('pdf', help='PDF file to process')
@@ -489,25 +492,26 @@ def parse_args():
 
     return parser.parse_args()
 
-def main():
-    args = parse_args()
-    logging.basicConfig(level=logging.DEBUG)
-    logging.getLogger('decodegraphics').setLevel(logging.INFO)
+class Floorplans:
+    def __init__(self, args):
+        self.data = None
+        self.args = args
 
-    logging.debug("known shapes = %s", KNOWN_SHAPES)
+    def process_pdf(self, inpfn):
+        outfn = os.path.splitext(os.path.basename(inpfn))[0] + '.svg'
 
-    inpfn = args.pdf
-    outfn = 'copy.' + os.path.basename(inpfn)
-    pages = PdfReader(inpfn, decompress=True).pages
+        logger.info("processing %s to %s", inpfn, outfn)
 
-    parser = Floorplan2Svg()
-    parser.debug_angle = args.debug_angle
+        pages = PdfReader(inpfn, decompress=True).pages
 
-    sys.setrecursionlimit(sys.getrecursionlimit()*2)
+        if len(pages) != 1:
+            logging.error("got %d pages in %s, want 1", len(pages), inpfn)
+            raise ValueError("unexpected number of pages")
 
-    for page in pages:
+        page = pages[0]
+
         box = [float(x) for x in page.MediaBox]
-        assert box[0] == box[1] == 0, "demo won't work on this PDF"
+        assert box[0] == box[1] == 0, "MediaBox doesn't start at 0,0"
         annots = page.Annots or []
         for a in annots:
             logger.info("annot at %s: %s", a.Rect, a.Contents.to_unicode())
@@ -519,6 +523,8 @@ def main():
             if rotate % 180 == 90:
                 width, height = height, width
         d = draw.Drawing(width, height)
+        parser = Floorplan2Svg()
+        parser.debug_angle = self.args.debug_angle
         parser.parsepage(page, d)
         if parser.bogus:
             raise ValueError("missing floorplan")
@@ -526,7 +532,7 @@ def main():
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
         parser.find_north()
         parser.find_characters()
-        if not args.disable_find_text:
+        if not self.args.disable_find_text:
             parser.find_text()
         if parser.north_angle and not parser.debug_angle:
             parser.remove_edge_content(parser.stack[1], IDENTITY)
@@ -536,15 +542,31 @@ def main():
         fontSize = 6
         if parser.scale:
             fontSize = 100 # Make characters 1m by default
-        if not args.disable_reify_text:
+        if not self.args.disable_reify_text:
             parser.reify_text(fontSize)
-        if annots and not args.disable_annotations:
+        if annots and not self.args.disable_annotations:
             annotg = Group(class_="annotations")
             d.append(annotg)
             for a in annots:
                 rect = [float(x) for x in a.Rect]
                 parser.debug_rect(rect, matrix=parser.pdf2svg.matrix, text=a.Contents.to_unicode(), parent=annotg, stroke="orange")
         print(d.asSvg())
+
+
+
+def main():
+    args = parse_args()
+    logging.basicConfig(level=logging.DEBUG)
+    logging.getLogger('decodegraphics').setLevel(logging.INFO)
+
+    logging.debug("known shapes = %s", KNOWN_SHAPES)
+
+    inpfn = args.pdf
+
+    sys.setrecursionlimit(sys.getrecursionlimit()*2)
+
+    f = Floorplans(args)
+    f.process_pdf(inpfn)
 
 if __name__ == '__main__':
     main()
