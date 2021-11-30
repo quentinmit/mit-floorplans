@@ -478,19 +478,19 @@ class Pdf2Svg(BaseParser):
 
     @token('ri', 'n')
     def parse_intent(self, intent):
-        # TODO: add logging
-        pass
+        logger.warning("Ignoring rendering intent %s ri", intent)
+        # TODO
 
     @token('i', 'i')
     def parse_flatness(self, flatness):
-        # TODO: add logging
-        pass
+        logger.warning("Ignoring flatness %s i", flatness)
+        # TODO
 
     @token('gs', 'n')
     def parse_gstate(self, dictname):
-        # TODO: add logging
+        logger.warning("Ignoring gstate %s gs", dictname)
         # Could parse stuff we care about from here later
-        pass
+        # TODO
 
     def start_path(self):
         if self.gpath is None:
@@ -609,13 +609,13 @@ class Pdf2Svg(BaseParser):
 
     @token('W')
     def parse_clip_path(self):
-        # TODO: add logging
-        pass
+        logger.warning("Ignoring clip path W")
+        # TODO
 
     @token('W*')
     def parse_clip_path_even_odd(self):
-        # TODO: add logging
-        pass
+        logger.warning("Ignoring clip path W*")
+        # TODO
 
     @token('G', 'f')
     def parse_stroke_gray(self, gray):
@@ -748,8 +748,8 @@ class Pdf2Svg(BaseParser):
 
     @token('Do', 'n')
     def parse_xobject(self, name):
+        logger.warning("Ignoring XObject %s Do", name)
         # TODO: Need to do this
-        pass
 
     #############################################################################
     # Tag parsing
