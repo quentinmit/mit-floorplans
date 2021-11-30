@@ -563,6 +563,9 @@ class Floorplan2Svg(Pdf2Svg):
         children.remove(out)
         last_angle = out.final_angle
         last_point = out._points[-1]
+        if last_point not in paths_by_point:
+            last_point = out._points[0]
+            out.args['d'] = out.reversed_d
         while last_point in paths_by_point:
             angles = {
                 (
@@ -586,15 +589,17 @@ class Floorplan2Svg(Pdf2Svg):
             }
             if len(angles) > 1:
                 logger.info("found multiple connections at %s: %s", last_point, angles)
-            _, angle, _, direction, child = next(iter(sorted(angles)))
+            _, angle, _, flipped, child = next(iter(sorted(angles)))
             logger.info("appended %s with initial angle %s", child, angle)
             children.remove(child)
-            out.args['d'] += ' ' + child.args['d']
             last_angle = angle
-            if direction:
+            # Strip the M command
+            if flipped:
                 last_point = child._points[0]
+                out.args['d'] += ' ' + child.reversed_d.split(' ', 1)[1]
             else:
                 last_point = child._points[-1]
+                out.args['d'] += ' ' + child.args['d'].split(' ', 1)[1]
         if children:
             logger.warning("disconnected children %s", children)
             for child in children:
@@ -621,7 +626,7 @@ class Floorplan2Svg(Pdf2Svg):
         # scale should be a string of the form 1/32" = 1'0"
         fake, real = self._SCALE_RE.match(self.scale).groups()
         # PDF default space is in units of 1/72"
-        # We want to end up in a space with units of cm (not m because SVG doesn't like small viewboxes)
+        # We want to end up in a space with units of m
         fake = self._parse_scale(fake) * 72
         real = self._parse_scale(real) * 2.54 / 100
         scale = real/fake

@@ -278,9 +278,9 @@ class Path(TransformMixin, draw.Path):
 
     @path_property
     def reversed_d(self):
-        initial = last = np.zeros(2)
+        initial = last = np.array([np.nan, np.nan])
         commands = []
-        for curve in reversed(self.curves):
+        for curve in reversed(self.__class__(d='M0,0 '+self.args['d']).curves):
             nodes = np.flip(curve.nodes.T, axis=0)
             if (nodes[0] != last).all():
                 initial = last = nodes[0]
