@@ -629,7 +629,7 @@ class Floorplans:
             seen = parser.find_rooms(rooms, fontSize)
             logger.info("Found rooms: %s", seen)
             logger.info("Missing rooms: %s", set(rooms)-set(seen))
-        if annots and not self.args.disable_annotations:
+        if annots and self.args.debug_annotations:
             annotg = Group(class_="annotations")
             d.append(annotg)
             for a in annots:
@@ -643,7 +643,7 @@ def parse_args():
     parser.add_argument('pdfs', metavar='PDF', nargs='+', help='PDF file to process')
     parser.add_argument('--debug-angle', action='store_true',
                         help='debug north rotation')
-    parser.add_argument('--disable-annotations', action='store_true')
+    parser.add_argument('--debug-annotations', action='store_true')
     parser.add_argument('--disable-find-text', action='store_true')
     parser.add_argument('--disable-reify-text', action='store_true')
 
