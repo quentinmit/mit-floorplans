@@ -523,8 +523,14 @@ class Floorplan2Svg(Pdf2Svg):
                     "northing_offset": -center[1],
                 }
                 element.parent.children.remove(element.child)
-                room = rooms.get(roomNumber)
-                g.append(Text(roomNumber, fontSize=fontSize, x=center[0], y=-center[1], center=True, valign="middle", fill="green" if room else "red"))
+                room = rooms.get(roomNumber, {})
+                classes = ['room']
+                for c in (room.get('major_use_desc'), room.get('use_desc'), room.get('organization_name')):
+                    if c:
+                        classes.append(''.join(filter(lambda x: x.isalnum(), c)))
+                if not room:
+                    classes.append('unknown')
+                g.append(Text(roomNumber, fontSize=fontSize, class_=' '.join(classes), x=center[0], y=-center[1], center=True, valign="middle"))
         return seen
 
 class Floorplans:
