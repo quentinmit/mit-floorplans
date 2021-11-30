@@ -508,6 +508,44 @@ class Floorplan2Svg(Pdf2Svg):
                 path_segments_by_args[key].append((parent, child))
         logger.info("path segments by args: %s", path_segments_by_args)
 
+        for args_key, paths in path_segments_by_args.items():
+            groups = []
+            groups_by_point = {}
+            for path in paths:
+                logger.debug("examining %s", path)
+                group = None
+                for point in path[1]._points:
+                    if point in groups_by_point:
+                        if group:
+                            oldgroup = groups_by_point[point]
+                            if oldgroup == group:
+                                continue
+                            logger.debug("merging two groups")
+                            group.extend(oldgroup)
+                            for k, v in groups_by_point.items():
+                                if v == oldgroup:
+                                    groups_by_point[k] = group
+                            groups.remove(oldgroup)
+                        else:
+                            group = groups_by_point[point]
+                            logger.debug("point %s found in group %s", point, group)
+                            group.append(path)
+                if not group:
+                    logger.debug("no points found, creating new group")
+                    group = [path]
+                    groups.append(group)
+                for point in path[1]._points:
+                    groups_by_point[point] = group
+            logger.info("for args %s, groups:", args_key)
+            for group in groups:
+                if len(group) <= 1:
+                    continue
+                logger.info("- %r", group)
+                # TODO: Stitch together
+                group[0][1].args['d'] = ' '.join(x[1].args['d'] for x in group)
+                for parent, child in group[1:]:
+                    parent.children.remove(child)
+
 
     _SCALE_PART_RE = re.compile(r"""(?:(?P<feet>\d+)'-?)?(?P<numerator>\d+)(?:/(?P<denominator>\d+))?"$""")
     def _parse_scale(self, text):
