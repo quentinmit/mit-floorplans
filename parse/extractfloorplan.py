@@ -19,6 +19,25 @@ from fonts import KNOWN_SHAPES, CHAR_POINTS
 
 logger = logging.getLogger('extractfloorplan')
 
+_GROUP_STYLES = {
+    'A-WALL': # Regular walls
+    "stroke: purple",
+    'A-WALL-PHTM': # Phantom walls (cages?)
+    "stroke: gray",
+    'A-WALL-PRHT': # Partial height walls
+    "stroke: gray",
+    'A-WALL-CORE': # Perimeter walls and foundations
+    "",
+    'A-GLAZ': # Windows
+    "stroke: orange",
+    'A-DOOR': # Interior and exterior doors
+    "stroke: blue",
+    'A-MISC': # Stairs (etc.)
+    "",
+    'A-AREA-FICM$TXT': # Text inside floorplan
+    "",
+}
+
 class Floorplan2Svg(Pdf2Svg):
     logger = logger
 
@@ -86,7 +105,7 @@ class Floorplan2Svg(Pdf2Svg):
                 elif bounds[0] > self.top.viewBox[0]+(0.9*self.top.width):
                     parent.children.remove(child)
 
-    def iterelements(self, parent=None, matrix=IDENTITY):
+    def iterelements(self, parent=None, matrix=IDENTITY, group_filter=lambda parent, child, matrix: True):
         if parent:
             matrix = np.dot(parent.matrix, matrix)
             children = parent.children
@@ -95,7 +114,7 @@ class Floorplan2Svg(Pdf2Svg):
             children = parent.elements
         for child in list(children): # snapshot in case list is mutated mid-iteration
             yield parent, child, matrix
-            if isinstance(child, Group):
+            if isinstance(child, Group) and group_filter(parent, child, matrix):
                 yield from self.iterelements(child, matrix)
 
     def debug_rect(self, bounds, matrix=None, text=None, parent=None, stroke="black", fill="none", **kwargs):
