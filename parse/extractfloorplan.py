@@ -483,7 +483,7 @@ class Floorplan2Svg(Pdf2Svg):
         center = np.mean(np.array(bounds).reshape((-1, 2)), axis=0)
         self.apply_offset(-center[1], -center[0])
 
-    def apply_offset(self, northing, easting):
+    def apply_offset(self, easting, northing):
         self.pdf2svg.apply_matrix(mat(1, 0, 0, 1, easting, northing))
         self.fix_viewbox()
 
@@ -537,9 +537,12 @@ class Floorplans:
     def __init__(self, args):
         self.data = None
         self.args = args
+        self.center = (0, 0)
 
     def load_data(self, fname):
         self.data = json.load(open(fname, 'r'))
+        lobby10 = [b for b in self.data.get('buildings', []) if b['building_number'] == '10'][0]
+        self.center = lobby10['easting_x_spcs'], lobby10['northing_y_spcs']
 
     _FILENAME_RE = re.compile(r"^([^_]+)_([^_.]+).pdf$")
 
@@ -603,10 +606,10 @@ class Floorplans:
         parser.apply_scale()
         for b in self.data.get("buildings", []):
             if b["building_number"] == building:
-                northing = b.get("northing_y_spcs")
-                easting = b.get("easting_x_spcs")
+                easting = b.get("easting_x_spcs") - self.center[0]
+                northing = b.get("northing_y_spcs") - self.center[1]
                 if northing and easting:
-                    parser.apply_offset(-northing, easting)
+                    parser.apply_offset(easting, -northing)
                 else:
                     logging.error("Building %s does not have an offset: %s", building, b)
                 break
