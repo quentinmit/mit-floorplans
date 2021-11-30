@@ -250,7 +250,8 @@ class Floorplan2Svg(Pdf2Svg):
         out = []
         for cmd, args in commands:
             try:
-                if int(self.page.Rotate or 0) == 270:
+                rotate = int(self.page.Rotate or 0)
+                if rotate == 270:
                     if cmd == 'H':
                         cmd = 'V'
                     elif cmd == 'V':
@@ -258,7 +259,7 @@ class Floorplan2Svg(Pdf2Svg):
                         args = (-args[0],)
                     else:
                         args = chain.from_iterable((-y if y else 0, x) for x,y in ichunked(args, 2))
-                elif self.page.Rotate:
+                elif rotate:
                     raise NotImplementedError()
             except:
                 logger.exception("failed to update %s, %s", cmd, args)
@@ -481,7 +482,7 @@ class Floorplan2Svg(Pdf2Svg):
     def recenter(self):
         bounds = self.pdf2svg.projected_bounds()
         center = np.mean(np.array(bounds).reshape((-1, 2)), axis=0)
-        self.apply_offset(-center[1], -center[0])
+        self.apply_offset(-center[0], -center[1])
 
     def apply_offset(self, easting, northing):
         self.pdf2svg.apply_matrix(mat(1, 0, 0, 1, easting, northing))
@@ -602,13 +603,14 @@ class Floorplans:
             parser.pdf2svg.apply_matrix(rotate_mat(-parser.north_angle))
             parser.fix_viewbox()
             #parser.stack[1].matrix = np.dot(rotate_mat(parser.north_angle), parser.stack[1].matrix)
-        parser.recenter()
         parser.apply_scale()
+        parser.recenter()
         for b in self.data.get("buildings", []):
             if b["building_number"] == building:
                 easting = b.get("easting_x_spcs") - self.center[0]
                 northing = b.get("northing_y_spcs") - self.center[1]
                 if northing and easting:
+                    logger.info("applying easting %s northing %s", easting, northing)
                     parser.apply_offset(easting, -northing)
                 else:
                     logging.error("Building %s does not have an offset: %s", building, b)
