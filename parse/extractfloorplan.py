@@ -47,6 +47,13 @@ class Floorplan2Svg(Pdf2Svg):
 
     debug_angle = False
 
+    def __init__(self):
+        super().__init__()
+        self.seen_ocg_names = set()
+
+    def start_optional_content_group(self, class_):
+        self.seen_ocg_names.add(class_)
+
     def stack_matrix(self):
         matrix = mat(1,0,0,1,0,0)
         for element in reversed(self.stack):
