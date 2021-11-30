@@ -344,9 +344,9 @@ class Floorplan2Svg(Pdf2Svg):
         # FIXME: Some of these might be real
         if len(chars) <= 1:
             return
-        if self._SCALE_RE.match(text) and not self.scale:
-            self.scale = text
-            logger.info("ocr scale = %s", text)
+        if self._SCALE_RE.match(text.replace(" ", "")) and not self.scale:
+            self.scale = text.replace(" ", "")
+            logger.info("ocr scale = %s", self.scale)
         parent = chars[0].parent
         g = Group(class_="vectortext", stroke='blue', title=text)
         g.vectortext = text
