@@ -215,7 +215,7 @@ class Floorplan2Svg(Pdf2Svg):
                         same_size = abs(char.divisor/div - 1) < 0.01
                         if same_size:
                             logger.warn("perfect match %s divisors %s %s", char.char, char.divisor, div)
-                        if last_was_char or same_size or char.char not in ('T', 'L', 'I', 'l', '-', '/', 'O', 'V'):
+                        if last_was_char or same_size or char.char not in ('T', 'L', 'I', 'l', '-', '/', 'O', 'V', 'U'):
                             score += (not same_size)*1
                             possibilities.append((score, char.char, len(char.shapes)))
             except:
@@ -227,7 +227,9 @@ class Floorplan2Svg(Pdf2Svg):
                 logger.info("multiple possibilities found for %s", [peekable[i].child for i in range(len(char.shapes))])
                 for (score, char, l) in sorted(possibilities):
                     logger.info("possible %s with score %s", char, score)
-            return next(iter(sorted(possibilities)))[1:]
+            result = next(iter(sorted(possibilities)))
+            first.child.args['data-ocr'] = "score %s num possibilities %d" % (result[0], len(possibilities))
+            return result[1:]
 
     def _same(self, a, b):
         if a.shape != b.shape:
