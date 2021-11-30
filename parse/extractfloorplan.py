@@ -209,13 +209,15 @@ class Floorplan2Svg(Pdf2Svg):
                     score = np.max(norm**2)
                     if debug:
                         logger.debug("considered %s, score %s", char.char, score)
-                    if score < 0.025 and abs(char.divisor/div - 1) < 0.01:
-                        logger.warn("perfect match %s divisors %s %s", char.char, char.divisor, div)
                     if score < 0.025:
                         #score = np.max(norm)
                         # Add 1 to every score that isn't a perfect size match
-                        score += (abs(char.divisor/div - 1) > 0.01)*1
-                        possibilities.append((score, char.char, len(char.shapes)))
+                        same_size = abs(char.divisor/div - 1) < 0.01
+                        if same_size:
+                            logger.warn("perfect match %s divisors %s %s", char.char, char.divisor, div)
+                        if last_was_char or same_size or char.char not in ('T', 'L', 'I', 'l', '-', '/', 'O', 'V'):
+                            score += (not same_size)*1
+                            possibilities.append((score, char.char, len(char.shapes)))
             except:
                 logger.exception("attempting to match %s\nnorms %s", char, norms)
                 raise
@@ -300,13 +302,12 @@ class Floorplan2Svg(Pdf2Svg):
             if result:
                 char, elements = result
                 logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
-                if char not in ('T', 'L', 'I', 'l', '-', '/', 'O', 'V') or last_was_char: # easy for walls to look like these characters
-                    paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
-                    shapes = list(take(elements, iterator))
-                    self._mark_character(char, shapes, last_offset)
-                    last_offset = shapes[0].child.offset
-                    last_was_char = True
-                    continue
+                paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
+                shapes = list(take(elements, iterator))
+                self._mark_character(char, shapes, last_offset)
+                last_offset = shapes[0].child.offset
+                last_was_char = True
+                continue
             # If not, catalog and move on
             last_was_char = False
             shape = next(iterator)
