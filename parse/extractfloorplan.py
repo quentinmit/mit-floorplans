@@ -543,6 +543,7 @@ class Floorplans:
     def load_data(self, fname):
         self.data = json.load(open(fname, 'r'))
         lobby10 = [b for b in self.data.get('buildings', []) if b['building_number'] == '10'][0]
+        # Facilities data is in feet; convert to meters when needed
         self.center = lobby10['easting_x_spcs'], lobby10['northing_y_spcs']
 
     _FILENAME_RE = re.compile(r"^([^_]+)_([^_.]+).pdf$")
@@ -607,8 +608,9 @@ class Floorplans:
         parser.recenter()
         for b in self.data.get("buildings", []):
             if b["building_number"] == building:
-                easting = b.get("easting_x_spcs") - self.center[0]
-                northing = b.get("northing_y_spcs") - self.center[1]
+                # Facilities data is in feet
+                easting = (b.get("easting_x_spcs") - self.center[0])*0.3048
+                northing = (b.get("northing_y_spcs") - self.center[1])*0.3048
                 if northing and easting:
                     logger.info("applying easting %s northing %s", easting, northing)
                     parser.apply_offset(easting, -northing)
