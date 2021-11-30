@@ -769,14 +769,15 @@ class Pdf2Svg(BaseParser):
         logger.debug(properties)
         if properties.get('/Type') == '/OCG':
             self.current_ocg = properties.Name
-            self.parse_savestate(class_=self.marked_tag)
+            self.marked_tag_class = self.marked_tag + ' ' + self.current_ocg.strip('()')
+            self.parse_savestate(class_=self.marked_tag_class)
             self.last.args['title'] = self.current_ocg
 
     @token('EMC')
     def parse_end_marked_content(self):
-        logger.debug("end marked content %s", self.marked_tag)
+        logger.debug("end marked content %s", self.marked_tag_class)
         assert self.marked_tag is not None
-        self.parse_restorestate(class_=self.marked_tag)
+        self.parse_restorestate(class_=self.marked_tag_class)
         self.marked_tag = None
         #if self.current_ocg in ('(A-SHBD)', '(A-VIEW)'):
         #    self.canv.restoreState()
