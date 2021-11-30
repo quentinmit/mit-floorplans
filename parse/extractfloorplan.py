@@ -169,6 +169,7 @@ class Floorplan2Svg(Pdf2Svg):
 
         Returns: character, number of elements required or None
         """
+        ocr_logger = logger.getChild("ocr")
         first = peekable.peek()
         points = first.points
         if points is None:
@@ -179,14 +180,14 @@ class Floorplan2Svg(Pdf2Svg):
         possibilities = []
         debug = (first.bounds == (611.1599999999997, -399.17999999999984, 612.4199999999997, -397.3199999999998))
         if debug:
-            logger.debug("Attempting to match character at %s", first.bounds)
+            ocr_logger.debug("Attempting to match character at %s", first.bounds)
             for i in range(3):
-                logger.debug("peekable[%d] = %s", i, peekable[i])
-                logger.debug("curves = %s", peekable[i].child.curves)
+                ocr_logger.debug("peekable[%d] = %s", i, peekable[i])
+                ocr_logger.debug("curves = %s", peekable[i].child.curves)
         for char in KNOWN_SHAPES:
             if len(char.shapes) != last_len and possibilities:
                 if debug:
-                    logger.debug("finished shapes of len %s, now %s, got possibilities %s", last_len, len(char.shapes), possibilities)
+                    ocr_logger.debug("finished shapes of len %s, now %s, got possibilities %s", last_len, len(char.shapes), possibilities)
                 # Return the most-similar shape from the category with the highest number of strokes
                 return next(iter(sorted(possibilities)))[1:]
             last_len = len(char.shapes)
@@ -208,25 +209,25 @@ class Floorplan2Svg(Pdf2Svg):
                     norm = np.concatenate(norms)
                     score = np.max(norm**2)
                     if debug:
-                        logger.debug("considered %s, score %s", char.char, score)
+                        ocr_logger.debug("considered %s, score %s", char.char, score)
                     if score < 0.025:
                         #score = np.max(norm)
                         # Add 1 to every score that isn't a perfect size match
                         same_size = abs(char.divisor/div - 1) < 0.01
                         if same_size:
-                            logger.warn("perfect match %s divisors %s %s", char.char, char.divisor, div)
+                            ocr_logger.info("perfect match %s divisors %s %s", char.char, char.divisor, div)
                         if last_was_char or same_size or char.char not in ('T', 'L', 'I', 'l', '-', '/', 'O', 'V', 'U'):
                             score += (not same_size)*1
                             possibilities.append((score, char.char, len(char.shapes)))
             except:
-                logger.exception("attempting to match %s\nnorms %s", char, norms)
+                ocr_logger.exception("attempting to match %s\nnorms %s", char, norms)
                 raise
 
         if possibilities:
             if len(possibilities) > 1:
-                logger.info("multiple possibilities found for %s", [peekable[i].child for i in range(len(char.shapes))])
+                ocr_logger.info("multiple possibilities found for %s", [peekable[i].child for i in range(len(char.shapes))])
                 for (score, char, l) in sorted(possibilities):
-                    logger.info("possible %s with score %s", char, score)
+                    ocr_logger.info("possible %s with score %s", char, score)
             result = next(iter(sorted(possibilities)))
             first.child.args['data-ocr'] = "score %s num possibilities %d" % (result[0], len(possibilities))
             return result[1:]
@@ -283,6 +284,8 @@ class Floorplan2Svg(Pdf2Svg):
             shape.child.args['title'] = char + ' %s or %s (%s)' % (self._shape_str(shape.commands), self._shape_str(shape.child.offset_commands(last_offset)[1]), ','.join("%g" % x for x in shape.points.flatten()))
 
     def find_characters(self):
+        ocr_logger = logger.getChild('ocr')
+
         def _iterator():
             for parent, child, matrix in self.iterelements():
                 if not isinstance(child, Path):
@@ -303,7 +306,7 @@ class Floorplan2Svg(Pdf2Svg):
             result = self._ocr(iterator, last_was_char)
             if result:
                 char, elements = result
-                logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
+                ocr_logger.info("shape at %s: %s (%d elements)", iterator[0].bounds, char, elements)
                 paths_by_shape[char] = paths_by_shape.get(char, 0) + 1
                 shapes = list(take(elements, iterator))
                 self._mark_character(char, shapes, last_offset)
@@ -317,16 +320,16 @@ class Floorplan2Svg(Pdf2Svg):
             paths_by_shape[shape_str] = paths_by_shape.get(shape_str, 0) + 1
             if shape_str not in path_ids:
                 path_ids[shape_str] = len(path_ids)
-            logger.info("unknown shape %s at %s: %s", path_ids[shape_str], shape.bounds, shape_str)
+            ocr_logger.info("unknown shape %s at %s: %s", path_ids[shape_str], shape.bounds, shape_str)
             if path_ids[shape_str] in (236,):
-                logger.debug("commands %s", shape.child.commands)
-                logger.debug("offset commands %s", shape.commands)
-                logger.debug("curves %r", shape.child.curves)
-                logger.debug("offset %s", shape.child.offset)
-                logger.debug("last offset %s", last_offset)
-                logger.debug("rotated offset %s", shape.offset)
-                #logger.debug("quantized %r", shape.child.quantize())
-                logger.debug("points %r", shape.points)
+                ocr_logger.debug("commands %s", shape.child.commands)
+                ocr_logger.debug("offset commands %s", shape.commands)
+                ocr_logger.debug("curves %r", shape.child.curves)
+                ocr_logger.debug("offset %s", shape.child.offset)
+                ocr_logger.debug("last offset %s", last_offset)
+                ocr_logger.debug("rotated offset %s", shape.offset)
+                #ocr_logger.debug("quantized %r", shape.child.quantize())
+                ocr_logger.debug("points %r", shape.points)
             shape_repr = shape_str
             if last_offset:
                 shape_repr += ' or %s' % self._shape_str(shape.child.offset_commands(last_offset)[1])
@@ -336,7 +339,7 @@ class Floorplan2Svg(Pdf2Svg):
             last_offset = shape.child.offset
 
         for count, shape in sorted((v,k) for k,v in paths_by_shape.items()):
-            logger.info("%d copies of %s: %s", count, path_ids.get(shape), shape)
+            ocr_logger.info("%d copies of %s: %s", count, path_ids.get(shape), shape)
 
     _SCALE_RE = re.compile('\s*=\s*'.join([r"""((?:\d+'-?)?\d+(?:/\d+)?")"""]*2))
 
@@ -656,6 +659,7 @@ def main():
     args = parse_args()
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger('decodegraphics').setLevel(logging.INFO)
+    logging.getLogger('extractfloorplan.ocr').setLevel(logging.WARNING)
 
     logging.debug("known shapes = %s", KNOWN_SHAPES)
 
