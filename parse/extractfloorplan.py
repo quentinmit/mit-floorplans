@@ -20,6 +20,8 @@ from fonts import KNOWN_SHAPES, CHAR_POINTS
 logger = logging.getLogger('extractfloorplan')
 
 class Floorplan2Svg(Pdf2Svg):
+    logger = logger
+
     bogus = False
     scale = None
     north_angle = None
@@ -76,9 +78,9 @@ class Floorplan2Svg(Pdf2Svg):
                 bounds = transformed_bounds(child.bounds, matrix)
                 width = bounds[2] - bounds[0]
                 height = bounds[3] - bounds[1]
-                if width == 0 and height == 0:
+                if isinstance(child, Path) and width == 0 and height == 0:
                     parent.children.remove(child)
-                    logger.warning("Removing zero-size path")
+                    logger.warning("Removing zero-size path %s", child)
                 elif bounds[3] > -0.2*self.top.height:
                     parent.children.remove(child)
                 elif bounds[0] > self.top.viewBox[0]+(0.9*self.top.width):
@@ -362,6 +364,7 @@ class Floorplan2Svg(Pdf2Svg):
     _Element = collections.namedtuple('_Element', 'parent child bounds'.split())
 
     def find_text(self):
+        logger = self.logger.getChild('find_text')
         def _iterator():
             for parent, child, matrix in self.iterelements():
                 if not isinstance(child, Group) or 'vectorchar' not in child.args.get('class', ''):
@@ -425,7 +428,7 @@ class Floorplan2Svg(Pdf2Svg):
                 text += char.child.vectorchar
                 char_bounds = char.bounds
 
-            logger.info('vector text "%s" found at %s: %s', text, first.bounds[:2], chars)
+            logger.debug('vector text "%s" found at %s: %s', text, first.bounds[:2], chars)
             self._mark_text(text, chars)
 
     def reify_text(self, fontSize=100):
@@ -660,6 +663,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger('decodegraphics').setLevel(logging.INFO)
     logging.getLogger('extractfloorplan.ocr').setLevel(logging.WARNING)
+    logging.getLogger('extractfloorplan.find_text').setLevel(logging.WARNING)
 
     logging.debug("known shapes = %s", KNOWN_SHAPES)
 
