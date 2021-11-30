@@ -486,10 +486,16 @@ class Pdf2Svg(BaseParser):
         logger.warning("Ignoring flatness %s i", flatness)
         # TODO
 
+    @token('CS', 'n')
+    def parse_color_space(self, name):
+        logger.warning("Ignoring color space %s CS", name)
+
     @token('gs', 'n')
     def parse_gstate(self, dictname):
         logger.warning("Ignoring gstate %s gs", dictname)
         # Could parse stuff we care about from here later
+        gstate = (self.page.Resources.ExtGState or {}).get(dictname)
+        logger.info("gstate dict %r", gstate)
         # TODO
 
     def start_path(self):
@@ -609,12 +615,14 @@ class Pdf2Svg(BaseParser):
 
     @token('W')
     def parse_clip_path(self):
-        logger.warning("Ignoring clip path W")
+        logger.warning("Ignoring clip path W; current path %s", self.gpath)
+        self.gpath.args['data-clip'] = 'W'
         # TODO
 
     @token('W*')
     def parse_clip_path_even_odd(self):
-        logger.warning("Ignoring clip path W*")
+        logger.warning("Ignoring clip path W*; current path %s", self.gpath)
+        self.gpath.args['data-clip'] = 'W*'
         # TODO
 
     @token('G', 'f')
