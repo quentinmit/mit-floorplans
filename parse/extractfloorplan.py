@@ -55,18 +55,6 @@ class Floorplan2Svg(Pdf2Svg):
         #logger.debug("stack matrix = %s", matrix)
         return matrix
 
-    # def gstate(self, _matrix=None, **kwargs):
-    #     if _matrix is not None:
-    #         new = np.dot(_matrix, self.stack_matrix())
-    #         logger.info("new gstate is at %s, height=%s", new[2], self.top.height)
-    #         if new[2][1] < -0.8*self.top.height:
-    #             g = Group()
-    #             g.matrix = _matrix
-    #             self.stack.append(g)
-    #             self.last = g
-    #             return
-    #     super().gstate(_matrix=_matrix, **kwargs)
-
     def do_text(self, text):
         super().do_text(text)
         if '" =' in text:
@@ -74,17 +62,6 @@ class Floorplan2Svg(Pdf2Svg):
             logger.info("text scale = %s", text)
         if "request the plan you queried" in text:
             self.bogus = True
-
-    # def finish_path(self, *args):
-    #     if self.gpath is not None:
-    #         bounds = self.gpath.bounds
-    #         logger.info("path %s %s bounds %s", self.gpath.args['d'], self.gpath.transform, self.gpath.bounds)
-    #         maxx, maxy, _ = np.dot((self.gpath.bounds[0], self.gpath.bounds[1], 1), self.stack_matrix())
-    #         logger.info("path bounds %s lowest point on path (%f,%f)", self.gpath.bounds, maxx, maxy)
-    #         if False and maxy > -0.2*self.top.height:
-    #             self.gpath = None
-    #             return
-    #     super().finish_path(*args)
 
     def remove_edge_content(self, parent, matrix):
         matrix = np.dot(parent.matrix, matrix)
