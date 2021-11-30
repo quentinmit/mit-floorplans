@@ -459,6 +459,40 @@ class Floorplan2Svg(Pdf2Svg):
                 center=True,
                 valign='middle',
             ))
+
+    def connect_walls(self):
+        path_segments_by_end_point = {}
+        args_by_parent = {}
+        for parent, child, matrix in self.iterelements():
+            args_by_parent[id(child)] = dict(args_by_parent.get(id(parent), {}).items())
+            for k,v in child.args.items():
+                if k == 'd': continue
+                args_by_parent[id(child)][k] = args_by_parent[id(child)].get(k, ()) + (v,)
+            if isinstance(child, Path):
+                points = child._points
+                first = points[0]
+                last = points[-1]
+                key = (last, frozenset(args_by_parent[id(parent)].items()))
+                if key in path_segments_by_end_point:
+                    logger.warning("Found multiple paths ending at %s", key)
+                else:
+                    path_segments_by_end_point[key] = (parent, child)
+
+        for parent, child, matrix in self.iterelements():
+            if not isinstance(child, Path):
+                continue
+            first = child._points[0]
+            key = (first, frozenset(args_by_parent[id(parent)].items()))
+            previous = path_segments_by_end_point.get(key)
+            if not previous:
+                continue
+            if child == previous[1]:
+                continue
+            logger.info("appended %s to %s", child, previous)
+            previous[1].args['d'] += ' ' + child.args['d']
+            parent.children.remove(child)
+            path_segments_by_end_point[(child._points[-1], frozenset(args_by_parent[id(parent)].items()))] = previous
+
     _SCALE_PART_RE = re.compile(r"""(?:(?P<feet>\d+)'-?)?(?P<numerator>\d+)(?:/(?P<denominator>\d+))?"$""")
     def _parse_scale(self, text):
         text = text.strip()
@@ -607,6 +641,10 @@ class Floorplans:
             raise ValueError("missing floorplan")
         logger.info("page viewbox = %s", d.viewBox)
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
+
+        if self.args.connect_walls:
+            parser.connect_walls()
+
         parser.find_north()
         parser.find_characters()
         if not self.args.disable_find_text:
@@ -657,6 +695,7 @@ def parse_args():
     parser.add_argument('--debug-annotations', action='store_true')
     parser.add_argument('--disable-find-text', action='store_true')
     parser.add_argument('--disable-reify-text', action='store_true')
+    parser.add_argument('--connect-walls', action='store_true')
 
     return parser.parse_args()
 
