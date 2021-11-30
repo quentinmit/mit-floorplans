@@ -493,6 +493,22 @@ class Floorplan2Svg(Pdf2Svg):
             parent.children.remove(child)
             path_segments_by_end_point[(child._points[-1], frozenset(args_by_parent[id(parent)].items()))] = previous
 
+    def connect_walls_2(self):
+        path_segments_by_args = {}
+        args_by_parent = {}
+        for parent, child, matrix in self.iterelements():
+            args_by_parent[id(child)] = dict(args_by_parent.get(id(parent), {}).items())
+            for k,v in child.args.items():
+                if k == 'd': continue
+                args_by_parent[id(child)][k] = args_by_parent[id(child)].get(k, ()) + (v,)
+            if isinstance(child, Path):
+                key = frozenset(args_by_parent[id(child)].items())
+                if key not in path_segments_by_args:
+                    path_segments_by_args[key] = []
+                path_segments_by_args[key].append((parent, child))
+        logger.info("path segments by args: %s", path_segments_by_args)
+
+
     _SCALE_PART_RE = re.compile(r"""(?:(?P<feet>\d+)'-?)?(?P<numerator>\d+)(?:/(?P<denominator>\d+))?"$""")
     def _parse_scale(self, text):
         text = text.strip()
@@ -644,6 +660,8 @@ class Floorplans:
 
         if self.args.connect_walls:
             parser.connect_walls()
+        if self.args.connect_walls_2:
+            parser.connect_walls_2()
 
         parser.find_north()
         parser.find_characters()
@@ -696,6 +714,7 @@ def parse_args():
     parser.add_argument('--disable-find-text', action='store_true')
     parser.add_argument('--disable-reify-text', action='store_true')
     parser.add_argument('--connect-walls', action='store_true')
+    parser.add_argument('--connect-walls-2', action='store_true')
 
     return parser.parse_args()
 
