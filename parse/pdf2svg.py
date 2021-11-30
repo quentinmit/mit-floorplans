@@ -180,6 +180,9 @@ _PATH_SPLIT_RE = re.compile(r"(?<!^) *(?=[a-zA-Z])")
 
 
 class Path(TransformMixin, draw.Path):
+    def __hash__(self):
+        return id(self)
+
     @path_property
     def _points(self):
         points = []
@@ -269,7 +272,41 @@ class Path(TransformMixin, draw.Path):
                     args = args[6:]
             elif cmd in ('Z', 'z'):
                 _add(last, last := initial)
+            else:
+                raise NotImplementedError("command %s" % cmd)
         return curves
+
+    @path_property
+    def reversed_d(self):
+        initial = last = np.zeros(2)
+        commands = []
+        for curve in reversed(self.curves):
+            nodes = np.flip(curve.nodes.T, axis=0)
+            if (nodes[0] != last).all():
+                initial = last = nodes[0]
+                commands.append(("M", initial))
+            if curve.degree == 1:
+                commands.append(("L", nodes[1]))
+            elif curve.degree == 3:
+                commands.append(("C", nodes[1:].flatten()))
+            else:
+                raise NotImplementedError("curve of degree %d" % curve.degree)
+            last = nodes[-1]
+            logger.error('last %s initial %s', last, initial)
+            if (last == initial).all():
+                # Always close paths if they return to the initial position
+                commands.append(("Z", ()))
+        return ' '.join('%s%s' % (command, ','.join('%g' % x for x in args)) for command, args in commands)
+
+    @path_property
+    def initial_angle(self):
+        vector = self.curves[0].evaluate_hodograph(0)
+        return np.arctan2(vector[1], vector[0])[0]
+
+    @path_property
+    def final_angle(self):
+        vector = self.curves[-1].evaluate_hodograph(1)
+        return np.arctan2(vector[1], vector[0])[0]
 
     @path_property
     def length(self):

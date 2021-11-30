@@ -541,10 +541,64 @@ class Floorplan2Svg(Pdf2Svg):
                 if len(group) <= 1:
                     continue
                 logger.info("- %r", group)
-                # TODO: Stitch together
-                group[0][1].args['d'] = ' '.join(x[1].args['d'] for x in group)
+                self._stitch(group)
                 for parent, child in group[1:]:
                     parent.children.remove(child)
+
+    def _stitch(self, paths):
+        """
+        paths: list of (parent, child) tuples
+        """
+
+        children = set(p[1] for p in paths)
+
+        paths_by_point = collections.defaultdict(set)
+        for _, child in paths:
+            points = child._points
+            first, last = points[0], points[-1]
+            # Don't know which direction
+            paths_by_point[first].add((False, child))
+            paths_by_point[last].add((True, child))
+        out = paths[0][1]
+        children.remove(out)
+        last_angle = out.final_angle
+        last_point = out._points[-1]
+        while last_point in paths_by_point:
+            angles = {
+                (
+                    (child.final_angle-np.pi if direction else child.initial_angle),
+                    direction,
+                    child,
+                )
+                for direction, child in paths_by_point[last_point]
+                if child in children
+            }
+            if not angles:
+                break
+            angles = {
+                (
+                    (-(angle-(last_angle+np.pi))+(2*np.pi)) % (2*np.pi),
+                    angle,
+                    len(child.args['d']),
+                    direction,
+                    child,
+                ) for angle, direction, child in angles
+            }
+            if len(angles) > 1:
+                logger.info("found multiple connections at %s: %s", last_point, angles)
+            _, angle, _, direction, child = next(iter(sorted(angles)))
+            logger.info("appended %s with initial angle %s", child, angle)
+            children.remove(child)
+            out.args['d'] += ' ' + child.args['d']
+            last_angle = angle
+            if direction:
+                last_point = child._points[0]
+            else:
+                last_point = child._points[-1]
+        if children:
+            logger.warning("disconnected children %s", children)
+            for child in children:
+                out.args['d'] += ' ' + child.args['d']
 
 
     _SCALE_PART_RE = re.compile(r"""(?:(?P<feet>\d+)'-?)?(?P<numerator>\d+)(?:/(?P<denominator>\d+))?"$""")
