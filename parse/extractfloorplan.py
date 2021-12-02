@@ -552,6 +552,8 @@ class Floorplan2Svg(Pdf2Svg):
 
         children = set(p[1] for p in paths)
 
+        debug = any((545.0400000000001,752.5200000000004) in p._points for p in children)
+
         paths_by_point = collections.defaultdict(set)
         for _, child in paths:
             points = child._points
@@ -559,13 +561,17 @@ class Floorplan2Svg(Pdf2Svg):
             # Don't know which direction
             paths_by_point[first].add((False, child))
             paths_by_point[last].add((True, child))
+
+        if debug:
+            logger.debug("paths = %s", children)
+            logger.debug("paths_by_point = %r", paths_by_point)
         out = paths[0][1]
         children.remove(out)
+        logger.info("starting with path %s", out)
         last_angle = out.final_angle
-        last_point = out._points[-1]
-        if last_point not in paths_by_point:
-            last_point = out._points[0]
-            out.args['d'] = out.reversed_d
+        first_point, last_point = out._points[0], out._points[-1]
+        first_angle = out.initial_angle + np.pi
+        # Stitch forward
         while last_point in paths_by_point:
             angles = {
                 (
@@ -592,19 +598,55 @@ class Floorplan2Svg(Pdf2Svg):
             _, angle, _, flipped, child = next(iter(sorted(angles)))
             logger.info("appended %s with initial angle %s", child, angle)
             children.remove(child)
-            last_angle = angle
             # Strip the M command
             if flipped:
                 last_point = child._points[0]
+                last_angle = child.initial_angle+np.pi
                 out.args['d'] += ' ' + child.reversed_d.split(' ', 1)[1]
             else:
                 last_point = child._points[-1]
+                last_angle = child.final_angle
                 out.args['d'] += ' ' + child.args['d'].split(' ', 1)[1]
+        # Stitch backward
+        if children:
+            while first_point in paths_by_point:
+                angles = {
+                    (
+                        (child.initial_angle-np.pi if direction else child.initial_angle),
+                        direction,
+                        child,
+                    )
+                    for direction, child in paths_by_point[first_point]
+                    if child in children
+                }
+                if not angles:
+                    break
+                angles = {
+                    (
+                        ((angle-(first_angle+np.pi))+(2*np.pi)) % (2*np.pi),
+                        angle,
+                        len(child.args['d']),
+                        direction,
+                        child,
+                    ) for angle, direction, child in angles
+                }
+                if len(angles) > 1:
+                    logger.info("found multiple connections at %s: %s", last_point, angles)
+                _, angle, _, flipped, child = next(iter(sorted(angles)))
+                logger.info("prepending %s with initial angle %s", child, angle)
+                children.remove(child)
+                first_angle = angle
+                # Strip the M command
+                if not flipped:
+                    first_point = child._points[-1]
+                    out.args['d'] = child.reversed_d + ' ' + out.args['d'].split(' ', 1)[1]
+                else:
+                    first_point = child._points[0]
+                    out.args['d'] = child.args['d'] + ' ' + out.args['d'].split(' ', 1)[1]
         if children:
             logger.warning("disconnected children %s", children)
             for child in children:
                 out.args['d'] += ' ' + child.args['d']
-
 
     _SCALE_PART_RE = re.compile(r"""(?:(?P<feet>\d+)'-?)?(?P<numerator>\d+)(?:/(?P<denominator>\d+))?"$""")
     def _parse_scale(self, text):
