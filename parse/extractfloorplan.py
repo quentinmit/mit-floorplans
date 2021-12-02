@@ -590,12 +590,13 @@ class Floorplan2Svg(Pdf2Svg):
                     angle,
                     len(child.args['d']),
                     direction,
+                    i,
                     child,
-                ) for angle, direction, child in angles
+                ) for i, (angle, direction, child) in enumerate(angles)
             }
             if len(angles) > 1:
                 logger.info("found multiple connections at %s: %s", last_point, angles)
-            _, angle, _, flipped, child = next(iter(sorted(angles)))
+            _, angle, _, flipped, _, child = next(iter(sorted(angles)))
             logger.info("appended %s with initial angle %s", child, angle)
             children.remove(child)
             # Strip the M command
@@ -627,12 +628,13 @@ class Floorplan2Svg(Pdf2Svg):
                         angle,
                         len(child.args['d']),
                         direction,
+                        i,
                         child,
-                    ) for angle, direction, child in angles
+                    ) for i, (angle, direction, child) in enumerate(angles)
                 }
                 if len(angles) > 1:
                     logger.info("found multiple connections at %s: %s", last_point, angles)
-                _, angle, _, flipped, child = next(iter(sorted(angles)))
+                _, angle, _, flipped, _, child = next(iter(sorted(angles)))
                 logger.info("prepending %s with initial angle %s", child, angle)
                 children.remove(child)
                 first_angle = angle
@@ -797,12 +799,14 @@ class Floorplans:
         logger.info("page viewbox = %s", d.viewBox)
         logger.info("%s bounds = %s", parser.stack[1], parser.stack[1].bounds)
 
+        # Find North before connecting paths
+        parser.find_north()
+
         if self.args.connect_walls:
             parser.connect_walls()
         if self.args.connect_walls_2:
             parser.connect_walls_2()
 
-        parser.find_north()
         parser.find_characters()
         if not self.args.disable_find_text:
             parser.find_text()
