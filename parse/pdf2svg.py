@@ -206,7 +206,7 @@ class Path(TransformMixin, draw.Path):
                     points.append((args[-2], args[-1]))
                 else:
                     points.append((cpx+args[-2], cpy+args[-2]))
-        return points
+        return tuple(tuple(np.around(p, decimals=4)) for p in points)
 
     @path_property
     def bounds(self):
