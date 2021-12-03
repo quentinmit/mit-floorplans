@@ -1,2 +1,4 @@
 oracle
 .netrc
+*.svg
+*/__pycache__/*
